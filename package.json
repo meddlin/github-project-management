@@ -1,0 +1,31 @@
+{
+  "name": "github-project-management",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.0.3",
+  "engines": {
+    "node": "22.13.1",
+    "pnpm": "11.0.3"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @gpm/web dev",
+    "build": "pnpm db:generate && pnpm -r --if-present build",
+    "lint": "eslint . --max-warnings=0",
+    "typecheck": "pnpm db:generate && pnpm -r --if-present typecheck",
+    "db:generate": "DATABASE_URL=${DATABASE_URL:-postgresql://postgres:postgres@localhost:5432/github_project_management?schema=public} pnpm --filter @gpm/db db:generate",
+    "db:validate": "DATABASE_URL=${DATABASE_URL:-postgresql://postgres:postgres@localhost:5432/github_project_management?schema=public} pnpm --filter @gpm/db db:validate",
+    "web:dev": "pnpm --filter @gpm/web dev",
+    "web:build": "pnpm --filter @gpm/web build",
+    "cli:dev": "pnpm --filter @gpm/cli dev",
+    "cli:build": "pnpm --filter @gpm/cli build"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.33.0",
+    "@next/eslint-plugin-next": "^15.5.0",
+    "eslint": "^9.33.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "globals": "^16.3.0",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.39.0"
+  }
+}

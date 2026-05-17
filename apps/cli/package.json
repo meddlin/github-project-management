@@ -1,0 +1,25 @@
+{
+  "name": "@gpm/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "gpm": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/index.ts",
+    "lint": "eslint . --max-warnings=0",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "commander": "^14.0.0",
+    "dotenv": "^17.2.1"
+  },
+  "devDependencies": {
+    "@gpm/tsconfig": "workspace:*",
+    "@types/node": "^22.13.1",
+    "tsx": "^4.20.4",
+    "typescript": "^5.9.2"
+  }
+}
