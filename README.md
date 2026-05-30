@@ -35,6 +35,7 @@ pnpm db:validate
 pnpm db:generate
 pnpm --filter @gpm/cli dev -- --help
 pnpm --filter @gpm/cli dev -- doctor
+pnpm --filter @gpm/cli dev -- repos sync
 ```
 
 ## Docker
