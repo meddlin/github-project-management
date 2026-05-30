@@ -27,11 +27,13 @@ model GitHubRepository {
   hasIssuesCreated   Boolean
   issueCount         Int
   openIssueCount     Int
+  favorite           Boolean  @default(false)
   syncedAt           DateTime
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
   @@index([fullName])
+  @@index([favorite, fullName])
   @@index([owner])
   @@index([syncedAt])
 }
