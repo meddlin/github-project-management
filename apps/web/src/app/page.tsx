@@ -1,6 +1,7 @@
 import { prisma } from "@gpm/db";
 import { CheckCircle2, CircleAlert, CircleX } from "lucide-react";
 import Link from "next/link";
+import { FavoriteToggle } from "./favorite-toggle";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +11,8 @@ type RepositoryData = {
   repositories: Awaited<ReturnType<typeof prisma.gitHubRepository.findMany>>;
   totalRepositoryCount: number;
 };
+
+type Repository = RepositoryData["repositories"][number];
 
 type HomeProps = {
   searchParams?: Promise<{
@@ -37,9 +40,7 @@ async function getRepositoryData(
     const [repositories, latestSyncRun, totalRepositoryCount] = await Promise.all([
       prisma.gitHubRepository.findMany({
         where: buildRepositoryWhere(hasIssueFilter, hasProjectFilter),
-        orderBy: {
-          fullName: "asc"
-        }
+        orderBy: [{ favorite: "desc" }, { fullName: "asc" }]
       }),
       prisma.gitHubRepositorySyncRun.findFirst({
         orderBy: {
@@ -146,6 +147,93 @@ function FilterLink({
   );
 }
 
+function RepositoryTable({
+  repositories,
+  title
+}: {
+  repositories: Repository[];
+  title: string;
+}) {
+  return (
+    <section className="overflow-hidden rounded-md border bg-card">
+      <div className="flex items-center justify-between border-b px-4 py-3">
+        <h2 className="text-sm font-semibold text-card-foreground">{title}</h2>
+        <span className="text-xs font-medium text-muted-foreground">
+          {repositories.length} {repositories.length === 1 ? "repo" : "repos"}
+        </span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[1000px] border-collapse text-left text-sm">
+          <thead className="bg-muted text-xs uppercase text-muted-foreground">
+            <tr>
+              <th className="w-12 px-4 py-3 font-semibold">Star</th>
+              <th className="px-4 py-3 font-semibold">Repository</th>
+              <th className="px-4 py-3 font-semibold">Visibility</th>
+              <th className="px-4 py-3 font-semibold">Default branch</th>
+              <th className="px-4 py-3 font-semibold">Projects</th>
+              <th className="px-4 py-3 font-semibold">Issues</th>
+              <th className="px-4 py-3 font-semibold">Last pushed</th>
+              <th className="px-4 py-3 font-semibold">Last synced</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {repositories.map((repository) => (
+              <tr key={repository.id} className="align-middle">
+                <td className="px-4 py-3">
+                  <FavoriteToggle favorite={repository.favorite} repositoryId={repository.id} />
+                </td>
+                <td className="px-4 py-3">
+                  <a
+                    className="font-medium text-primary hover:underline"
+                    href={repository.url}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    {repository.fullName}
+                  </a>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    {repository.isArchived ? "Archived" : "Active"}
+                    {repository.isFork ? " - Fork" : ""}
+                  </div>
+                </td>
+                <td className="px-4 py-3 capitalize text-muted-foreground">
+                  {repository.visibility.toLowerCase()}
+                </td>
+                <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
+                  {repository.defaultBranch ?? "None"}
+                </td>
+                <td className="px-4 py-3">
+                  <IndicatorBadge
+                    count={repository.linkedProjectCount}
+                    isActive={repository.hasLinkedProject}
+                    label="linked"
+                  />
+                </td>
+                <td className="px-4 py-3">
+                  <IndicatorBadge
+                    count={repository.issueCount}
+                    isActive={repository.hasIssuesCreated}
+                    label="total"
+                  />
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    {repository.openIssueCount} open
+                  </div>
+                </td>
+                <td className="px-4 py-3 text-muted-foreground">
+                  {formatDate(repository.pushedAt)}
+                </td>
+                <td className="px-4 py-3 text-muted-foreground">
+                  {formatDate(repository.syncedAt)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 export default async function Home({ searchParams }: HomeProps) {
   const appName = process.env.NEXT_PUBLIC_APP_NAME ?? "GitHub Project Management";
   const params = await searchParams;
@@ -160,6 +248,8 @@ export default async function Home({ searchParams }: HomeProps) {
     hasIssueFilter,
     hasProjectFilter
   );
+  const favoriteRepositories = repositories.filter((repository) => repository.favorite);
+  const otherRepositories = repositories.filter((repository) => !repository.favorite);
 
   return (
     <main className="min-h-screen bg-background">
@@ -252,71 +342,16 @@ export default async function Home({ searchParams }: HomeProps) {
               </div>
             </div>
           ) : (
-            <div className="overflow-hidden rounded-md border bg-card">
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[960px] border-collapse text-left text-sm">
-                  <thead className="bg-muted text-xs uppercase text-muted-foreground">
-                    <tr>
-                      <th className="px-4 py-3 font-semibold">Repository</th>
-                      <th className="px-4 py-3 font-semibold">Visibility</th>
-                      <th className="px-4 py-3 font-semibold">Default branch</th>
-                      <th className="px-4 py-3 font-semibold">Projects</th>
-                      <th className="px-4 py-3 font-semibold">Issues</th>
-                      <th className="px-4 py-3 font-semibold">Last pushed</th>
-                      <th className="px-4 py-3 font-semibold">Last synced</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {repositories.map((repository) => (
-                      <tr key={repository.id} className="align-middle">
-                        <td className="px-4 py-3">
-                          <a
-                            className="font-medium text-primary hover:underline"
-                            href={repository.url}
-                            rel="noreferrer"
-                            target="_blank"
-                          >
-                            {repository.fullName}
-                          </a>
-                          <div className="mt-1 text-xs text-muted-foreground">
-                            {repository.isArchived ? "Archived" : "Active"}
-                            {repository.isFork ? " - Fork" : ""}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 capitalize text-muted-foreground">
-                          {repository.visibility.toLowerCase()}
-                        </td>
-                        <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
-                          {repository.defaultBranch ?? "None"}
-                        </td>
-                        <td className="px-4 py-3">
-                          <IndicatorBadge
-                            count={repository.linkedProjectCount}
-                            isActive={repository.hasLinkedProject}
-                            label="linked"
-                          />
-                        </td>
-                        <td className="px-4 py-3">
-                          <IndicatorBadge
-                            count={repository.issueCount}
-                            isActive={repository.hasIssuesCreated}
-                            label="total"
-                          />
-                          <div className="mt-1 text-xs text-muted-foreground">
-                            {repository.openIssueCount} open
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-muted-foreground">
-                          {formatDate(repository.pushedAt)}
-                        </td>
-                        <td className="px-4 py-3 text-muted-foreground">
-                          {formatDate(repository.syncedAt)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+            <div className="space-y-4">
+              {favoriteRepositories.length > 0 ? (
+                <RepositoryTable repositories={favoriteRepositories} title="Favorites" />
+              ) : null}
+              {otherRepositories.length > 0 ? (
+                <RepositoryTable
+                  repositories={otherRepositories}
+                  title={favoriteRepositories.length > 0 ? "All other repositories" : "Repositories"}
+                />
+              ) : null}
             </div>
           )}
         </div>
