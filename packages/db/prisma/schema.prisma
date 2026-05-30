@@ -6,3 +6,45 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
+model GitHubRepository {
+  id                 String   @id @default(cuid())
+  githubId           String   @unique
+  nodeId             String   @unique
+  owner              String
+  name               String
+  fullName           String   @unique
+  url                String
+  visibility         String
+  isPrivate          Boolean
+  isFork             Boolean
+  isArchived         Boolean
+  defaultBranch      String?
+  pushedAt           DateTime?
+  githubUpdatedAt    DateTime?
+  hasLinkedProject   Boolean
+  linkedProjectCount Int
+  hasIssuesCreated   Boolean
+  issueCount         Int
+  openIssueCount     Int
+  syncedAt           DateTime
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([fullName])
+  @@index([owner])
+  @@index([syncedAt])
+}
+
+model GitHubRepositorySyncRun {
+  id              String    @id @default(cuid())
+  status          String
+  repositoryCount Int       @default(0)
+  error           String?
+  startedAt       DateTime  @default(now())
+  finishedAt      DateTime?
+  createdAt       DateTime  @default(now())
+
+  @@index([startedAt])
+  @@index([status])
+}
