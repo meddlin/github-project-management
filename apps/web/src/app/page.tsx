@@ -14,14 +14,29 @@ type RepositoryData = {
 type HomeProps = {
   searchParams?: Promise<{
     issues?: string | string[];
+    projects?: string | string[];
   }>;
 };
 
-async function getRepositoryData(hasIssueFilter: boolean): Promise<RepositoryData> {
+function buildRepositoryWhere(hasIssueFilter: boolean, hasProjectFilter: boolean) {
+  if (!hasIssueFilter && !hasProjectFilter) {
+    return undefined;
+  }
+
+  return {
+    ...(hasIssueFilter ? { hasIssuesCreated: true } : {}),
+    ...(hasProjectFilter ? { hasLinkedProject: true } : {})
+  };
+}
+
+async function getRepositoryData(
+  hasIssueFilter: boolean,
+  hasProjectFilter: boolean
+): Promise<RepositoryData> {
   try {
     const [repositories, latestSyncRun, totalRepositoryCount] = await Promise.all([
       prisma.gitHubRepository.findMany({
-        where: hasIssueFilter ? { hasIssuesCreated: true } : undefined,
+        where: buildRepositoryWhere(hasIssueFilter, hasProjectFilter),
         orderBy: {
           fullName: "asc"
         }
@@ -86,6 +101,28 @@ function IndicatorBadge({
   );
 }
 
+function buildFilterHref({
+  hasIssueFilter,
+  hasProjectFilter
+}: {
+  hasIssueFilter: boolean;
+  hasProjectFilter: boolean;
+}) {
+  const params = new URLSearchParams();
+
+  if (hasIssueFilter) {
+    params.set("issues", "with");
+  }
+
+  if (hasProjectFilter) {
+    params.set("projects", "with");
+  }
+
+  const query = params.toString();
+
+  return query ? `/?${query}` : "/";
+}
+
 function FilterLink({
   href,
   isActive,
@@ -113,9 +150,16 @@ export default async function Home({ searchParams }: HomeProps) {
   const appName = process.env.NEXT_PUBLIC_APP_NAME ?? "GitHub Project Management";
   const params = await searchParams;
   const issueFilterValue = Array.isArray(params?.issues) ? params.issues[0] : params?.issues;
+  const projectFilterValue = Array.isArray(params?.projects)
+    ? params.projects[0]
+    : params?.projects;
   const hasIssueFilter = issueFilterValue === "with";
-  const { error, latestSyncRun, repositories, totalRepositoryCount } =
-    await getRepositoryData(hasIssueFilter);
+  const hasProjectFilter = projectFilterValue === "with";
+  const hasActiveFilter = hasIssueFilter || hasProjectFilter;
+  const { error, latestSyncRun, repositories, totalRepositoryCount } = await getRepositoryData(
+    hasIssueFilter,
+    hasProjectFilter
+  );
 
   return (
     <main className="min-h-screen bg-background">
@@ -128,7 +172,7 @@ export default async function Home({ searchParams }: HomeProps) {
             </h1>
           </div>
           <div className="rounded-md border px-3 py-2 text-sm font-medium text-muted-foreground">
-            {repositories.length} {hasIssueFilter ? "matching" : "repos"}
+            {repositories.length} {hasActiveFilter ? "matching" : "repos"}
           </div>
         </header>
 
@@ -156,8 +200,23 @@ export default async function Home({ searchParams }: HomeProps) {
 
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div className="inline-flex rounded-md border bg-card p-1">
-              <FilterLink href="/" isActive={!hasIssueFilter} label="All repos" />
-              <FilterLink href="/?issues=with" isActive={hasIssueFilter} label="Has issues" />
+              <FilterLink href="/" isActive={!hasActiveFilter} label="All repos" />
+              <FilterLink
+                href={buildFilterHref({
+                  hasIssueFilter: !hasIssueFilter,
+                  hasProjectFilter
+                })}
+                isActive={hasIssueFilter}
+                label="Has issues"
+              />
+              <FilterLink
+                href={buildFilterHref({
+                  hasIssueFilter,
+                  hasProjectFilter: !hasProjectFilter
+                })}
+                isActive={hasProjectFilter}
+                label="Has projects"
+              />
             </div>
             <p className="text-sm text-muted-foreground">
               Showing {repositories.length} of {totalRepositoryCount} synced repos
