@@ -77,6 +77,8 @@ model GitHubIssue {
   planningStatus          PlanningStatus       @default(NO_STATUS)
   planningStatusSource    PlanningStatusSource @default(NONE)
   planningStatusUpdatedAt DateTime?
+  planningStartDate       DateTime?
+  planningEndDate         DateTime?
   projectItems            GitHubProjectItem[]
 
   @@unique([repositoryId, number])

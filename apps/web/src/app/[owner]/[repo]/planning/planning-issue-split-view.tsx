@@ -19,6 +19,8 @@ export type PlanningIssue = {
   id: string;
   labels: string[];
   number: number;
+  planningEndDate: string | null;
+  planningStartDate: string | null;
   planningStatus: string;
   planningStatusSource: string;
   state: string;
@@ -36,6 +38,17 @@ function formatDate(value: string | null): string {
     dateStyle: "medium",
     timeStyle: "short"
   }).format(new Date(value));
+}
+
+function formatDateOnly(value: string | null): string {
+  if (!value) {
+    return "None";
+  }
+
+  return new Intl.DateTimeFormat("en", {
+    dateStyle: "medium",
+    timeZone: "UTC"
+  }).format(new Date(`${value}T00:00:00.000Z`));
 }
 
 function StateBadge({ state }: { state: string }) {
@@ -210,6 +223,12 @@ export function PlanningIssueSplitView({ issues }: { issues: PlanningIssue[] }) 
                 </MetadataItem>
                 <MetadataItem icon={CalendarClock}>
                   Created {formatDate(selectedIssue.createdAt)}
+                </MetadataItem>
+                <MetadataItem icon={CalendarClock}>
+                  Start {formatDateOnly(selectedIssue.planningStartDate)}
+                </MetadataItem>
+                <MetadataItem icon={CalendarClock}>
+                  End {formatDateOnly(selectedIssue.planningEndDate)}
                 </MetadataItem>
                 <MetadataItem icon={CalendarClock}>
                   Updated {formatDate(selectedIssue.updatedAt)}

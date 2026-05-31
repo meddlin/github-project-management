@@ -22,7 +22,7 @@ import {
   verticalListSortingStrategy
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { ExternalLink, GripVertical, MessageSquare } from "lucide-react";
+import { CalendarClock, ExternalLink, GripVertical, MessageSquare } from "lucide-react";
 import { useMemo, useState, useTransition } from "react";
 import {
   updateIssuePlanningStatus,
@@ -70,6 +70,17 @@ function formatDate(value: string): string {
   return new Intl.DateTimeFormat("en", {
     dateStyle: "medium"
   }).format(new Date(value));
+}
+
+function formatDateOnly(value: string | null): string {
+  if (!value) {
+    return "None";
+  }
+
+  return new Intl.DateTimeFormat("en", {
+    dateStyle: "medium",
+    timeZone: "UTC"
+  }).format(new Date(`${value}T00:00:00.000Z`));
 }
 
 function normalizeIssueStatus(status: string): PlanningStatusValue {
@@ -190,6 +201,14 @@ function KanbanCard({
         </span>
         <span className="shrink-0">{formatDate(issue.updatedAt)}</span>
       </div>
+      {issue.planningStartDate || issue.planningEndDate ? (
+        <div className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
+          <CalendarClock aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+          <span className="truncate">
+            {formatDateOnly(issue.planningStartDate)} - {formatDateOnly(issue.planningEndDate)}
+          </span>
+        </div>
+      ) : null}
       <div className="mt-3 flex items-center justify-between gap-3 text-xs text-muted-foreground">
         <span className="inline-flex items-center gap-1">
           <MessageSquare aria-hidden="true" className="h-3.5 w-3.5" />

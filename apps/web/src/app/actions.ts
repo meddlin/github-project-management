@@ -3,6 +3,26 @@
 import { prisma } from "@gpm/db";
 import { revalidatePath } from "next/cache";
 
+type GitHubLabel = {
+  name: string;
+};
+
+type GitHubIssueResponse = {
+  assignees?: Array<{ login?: string | null }> | null;
+  closed_at?: string | null;
+  comments?: number | null;
+  created_at: string;
+  html_url: string;
+  id: number;
+  labels?: Array<{ name?: string | null } | string> | null;
+  node_id: string;
+  number: number;
+  state: string;
+  title: string;
+  updated_at: string;
+  user?: { login?: string | null } | null;
+};
+
 export async function setRepositoryFavorite(repositoryId: string, favorite: boolean) {
   if (!repositoryId) {
     throw new Error("Repository id is required.");
@@ -34,6 +54,240 @@ const planningStatuses = [
 ] as const;
 
 export type PlanningStatusValue = (typeof planningStatuses)[number];
+
+function requireGitHubToken() {
+  const token = process.env.GITHUB_PAT;
+
+  if (!token) {
+    throw new Error("GITHUB_PAT is required to create issues.");
+  }
+
+  return token;
+}
+
+function buildGitHubHeaders(token: string) {
+  return {
+    Accept: "application/vnd.github+json",
+    Authorization: `Bearer ${token}`,
+    "Content-Type": "application/json",
+    "User-Agent": "github-project-management",
+    "X-GitHub-Api-Version": "2022-11-28"
+  };
+}
+
+function normalizeDateInput(value: string | null | undefined): Date | null {
+  if (!value) {
+    return null;
+  }
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new Error("Planning dates must use YYYY-MM-DD format.");
+  }
+
+  return new Date(`${value}T00:00:00.000Z`);
+}
+
+function normalizeLabels(labels: string[]) {
+  return [...new Set(labels.map((label) => label.trim()).filter(Boolean))];
+}
+
+function getGitHubIssueLabelNames(labels: GitHubIssueResponse["labels"]) {
+  if (!labels) {
+    return [];
+  }
+
+  return labels
+    .map((label) => (typeof label === "string" ? label : label.name ?? ""))
+    .filter(Boolean);
+}
+
+async function readGitHubError(response: Response) {
+  try {
+    const payload = (await response.json()) as { message?: string };
+    return payload.message ?? response.statusText;
+  } catch {
+    return response.statusText;
+  }
+}
+
+export async function getRepositoryLabels({ owner, repo }: { owner: string; repo: string }) {
+  if (!owner || !repo) {
+    throw new Error("Repository owner and name are required.");
+  }
+
+  const token = requireGitHubToken();
+  const labels: string[] = [];
+  let page = 1;
+
+  while (true) {
+    const response = await fetch(
+      `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(
+        repo
+      )}/labels?per_page=100&page=${page}`,
+      {
+        headers: buildGitHubHeaders(token),
+        method: "GET"
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(
+        `Unable to load repository labels from GitHub: ${await readGitHubError(response)}`
+      );
+    }
+
+    const pageLabels = (await response.json()) as GitHubLabel[];
+    labels.push(...pageLabels.map((label) => label.name).filter(Boolean));
+
+    if (pageLabels.length < 100) {
+      break;
+    }
+
+    page += 1;
+  }
+
+  return labels.sort((left, right) => left.localeCompare(right));
+}
+
+export async function createPlanningIssue({
+  description,
+  endDate,
+  labels,
+  owner,
+  repo,
+  startDate,
+  title
+}: {
+  description: string;
+  endDate?: string | null;
+  labels: string[];
+  owner: string;
+  repo: string;
+  startDate?: string | null;
+  title: string;
+}) {
+  const normalizedTitle = title.trim();
+
+  if (!owner || !repo) {
+    throw new Error("Repository owner and name are required.");
+  }
+
+  if (!normalizedTitle) {
+    throw new Error("Issue title is required.");
+  }
+
+  const planningStartDate = normalizeDateInput(startDate);
+  const planningEndDate = normalizeDateInput(endDate);
+  const selectedLabels = normalizeLabels(labels);
+  const token = requireGitHubToken();
+  const repository = await prisma.gitHubRepository.findFirst({
+    where: {
+      name: repo,
+      owner
+    }
+  });
+
+  if (!repository) {
+    throw new Error(`Repository ${owner}/${repo} is not synced locally.`);
+  }
+
+  const response = await fetch(
+    `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues`,
+    {
+      body: JSON.stringify({
+        body: description.trim() || undefined,
+        labels: selectedLabels,
+        title: normalizedTitle
+      }),
+      headers: buildGitHubHeaders(token),
+      method: "POST"
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Unable to create GitHub issue: ${await readGitHubError(response)}`);
+  }
+
+  const issue = (await response.json()) as GitHubIssueResponse;
+  const syncedAt = new Date();
+
+  try {
+    await prisma.$transaction([
+      prisma.gitHubIssue.upsert({
+        create: {
+          assignees: issue.assignees?.map((assignee) => assignee.login ?? "").filter(Boolean) ?? [],
+          authorLogin: issue.user?.login ?? null,
+          closedAt: issue.closed_at ? new Date(issue.closed_at) : null,
+          commentCount: issue.comments ?? 0,
+          createdAt: new Date(issue.created_at),
+          githubId: issue.id.toString(),
+          labels: getGitHubIssueLabelNames(issue.labels),
+          nodeId: issue.node_id,
+          number: issue.number,
+          planningEndDate,
+          planningStartDate,
+          planningStatus: "NO_STATUS",
+          planningStatusSource: "NONE",
+          planningStatusUpdatedAt: null,
+          repositoryId: repository.id,
+          state: issue.state.toUpperCase(),
+          syncedAt,
+          title: issue.title,
+          updatedAt: new Date(issue.updated_at),
+          url: issue.html_url
+        },
+        update: {
+          assignees: issue.assignees?.map((assignee) => assignee.login ?? "").filter(Boolean) ?? [],
+          authorLogin: issue.user?.login ?? null,
+          closedAt: issue.closed_at ? new Date(issue.closed_at) : null,
+          commentCount: issue.comments ?? 0,
+          labels: getGitHubIssueLabelNames(issue.labels),
+          planningEndDate,
+          planningStartDate,
+          state: issue.state.toUpperCase(),
+          syncedAt,
+          title: issue.title,
+          updatedAt: new Date(issue.updated_at),
+          url: issue.html_url
+        },
+        where: {
+          repositoryId_githubId: {
+            githubId: issue.id.toString(),
+            repositoryId: repository.id
+          }
+        }
+      }),
+      prisma.gitHubRepository.update({
+        data: {
+          hasIssuesCreated: true,
+          issueCount: {
+            increment: 1
+          },
+          openIssueCount: {
+            increment: issue.state.toUpperCase() === "OPEN" ? 1 : 0
+          },
+          syncedAt
+        },
+        where: {
+          id: repository.id
+        }
+      })
+    ]);
+  } catch (error) {
+    throw new Error(
+      `GitHub issue #${issue.number} was created, but local persistence failed. Run the next sync to recover it. ${
+        error instanceof Error ? error.message : ""
+      }`.trim()
+    );
+  }
+
+  revalidatePath(`/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/planning`);
+
+  return {
+    number: issue.number,
+    url: issue.html_url
+  };
+}
 
 export async function updateIssuePlanningStatus({
   issueId,

@@ -1,6 +1,7 @@
 import { prisma, type Prisma } from "@gpm/db";
 import { CircleAlert } from "lucide-react";
 import Link from "next/link";
+import { CreateIssueDialog } from "./create-issue-dialog";
 import {
   PlanningIssueSplitView,
   type PlanningIssue
@@ -67,6 +68,10 @@ function formatDate(value: Date | null): string {
   }).format(value);
 }
 
+function formatDateOnly(value: Date | null): string | null {
+  return value ? value.toISOString().slice(0, 10) : null;
+}
+
 function serializeIssue(issue: NonNullable<PlanningData["repository"]>["issues"][number]): PlanningIssue {
   return {
     assignees: issue.assignees,
@@ -77,6 +82,8 @@ function serializeIssue(issue: NonNullable<PlanningData["repository"]>["issues"]
     id: issue.id,
     labels: issue.labels,
     number: issue.number,
+    planningEndDate: formatDateOnly(issue.planningEndDate),
+    planningStartDate: formatDateOnly(issue.planningStartDate),
     planningStatus: issue.planningStatus,
     planningStatusSource: issue.planningStatusSource,
     state: issue.state,
@@ -181,25 +188,28 @@ export default async function PlanningPage({ params, searchParams }: PlanningPag
 
           {repository ? (
             <>
-              <div className="mb-4 inline-flex rounded-md border bg-card p-1">
-                <PlanningTab
-                  href={buildPlanningHref({
-                    owner: decodedOwner,
-                    repo: decodedRepo,
-                    view: "list"
-                  })}
-                  isActive={activeView === "list"}
-                  label="List"
-                />
-                <PlanningTab
-                  href={buildPlanningHref({
-                    owner: decodedOwner,
-                    repo: decodedRepo,
-                    view: "board"
-                  })}
-                  isActive={activeView === "board"}
-                  label="Board"
-                />
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <div className="inline-flex rounded-md border bg-card p-1">
+                  <PlanningTab
+                    href={buildPlanningHref({
+                      owner: decodedOwner,
+                      repo: decodedRepo,
+                      view: "list"
+                    })}
+                    isActive={activeView === "list"}
+                    label="List"
+                  />
+                  <PlanningTab
+                    href={buildPlanningHref({
+                      owner: decodedOwner,
+                      repo: decodedRepo,
+                      view: "board"
+                    })}
+                    isActive={activeView === "board"}
+                    label="Board"
+                  />
+                </div>
+                <CreateIssueDialog owner={decodedOwner} repo={decodedRepo} />
               </div>
 
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border bg-card px-4 py-3 text-sm">
