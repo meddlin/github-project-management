@@ -1,7 +1,7 @@
 import { prisma } from "@gpm/db";
-import { CheckCircle2, CircleAlert, CircleX } from "lucide-react";
+import { CircleAlert } from "lucide-react";
 import Link from "next/link";
-import { FavoriteToggle } from "./favorite-toggle";
+import { RepositoryInventory, type InventoryRepository } from "./repository-inventory";
 
 export const dynamic = "force-dynamic";
 
@@ -11,8 +11,6 @@ type RepositoryData = {
   repositories: Awaited<ReturnType<typeof prisma.gitHubRepository.findMany>>;
   totalRepositoryCount: number;
 };
-
-type Repository = RepositoryData["repositories"][number];
 
 type HomeProps = {
   searchParams?: Promise<{
@@ -77,31 +75,6 @@ function formatDate(value: Date | null): string {
   }).format(value);
 }
 
-function IndicatorBadge({
-  count,
-  isActive,
-  label
-}: {
-  count: number;
-  isActive: boolean;
-  label: string;
-}) {
-  const Icon = isActive ? CheckCircle2 : CircleX;
-
-  return (
-    <span
-      className={`inline-flex min-w-24 items-center justify-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium ${
-        isActive
-          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-          : "border-zinc-200 bg-zinc-50 text-zinc-600"
-      }`}
-    >
-      <Icon aria-hidden="true" className="h-3.5 w-3.5" />
-      {isActive ? "Yes" : "No"} ({count} {label})
-    </span>
-  );
-}
-
 function buildFilterHref({
   hasIssueFilter,
   hasProjectFilter
@@ -147,91 +120,27 @@ function FilterLink({
   );
 }
 
-function RepositoryTable({
-  repositories,
-  title
-}: {
-  repositories: Repository[];
-  title: string;
-}) {
-  return (
-    <section className="overflow-hidden rounded-md border bg-card">
-      <div className="flex items-center justify-between border-b px-4 py-3">
-        <h2 className="text-sm font-semibold text-card-foreground">{title}</h2>
-        <span className="text-xs font-medium text-muted-foreground">
-          {repositories.length} {repositories.length === 1 ? "repo" : "repos"}
-        </span>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[1000px] border-collapse text-left text-sm">
-          <thead className="bg-muted text-xs uppercase text-muted-foreground">
-            <tr>
-              <th className="w-12 px-4 py-3 font-semibold">Star</th>
-              <th className="px-4 py-3 font-semibold">Repository</th>
-              <th className="px-4 py-3 font-semibold">Visibility</th>
-              <th className="px-4 py-3 font-semibold">Default branch</th>
-              <th className="px-4 py-3 font-semibold">Projects</th>
-              <th className="px-4 py-3 font-semibold">Issues</th>
-              <th className="px-4 py-3 font-semibold">Last pushed</th>
-              <th className="px-4 py-3 font-semibold">Last synced</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y">
-            {repositories.map((repository) => (
-              <tr key={repository.id} className="align-middle">
-                <td className="px-4 py-3">
-                  <FavoriteToggle favorite={repository.favorite} repositoryId={repository.id} />
-                </td>
-                <td className="px-4 py-3">
-                  <a
-                    className="font-medium text-primary hover:underline"
-                    href={repository.url}
-                    rel="noreferrer"
-                    target="_blank"
-                  >
-                    {repository.fullName}
-                  </a>
-                  <div className="mt-1 text-xs text-muted-foreground">
-                    {repository.isArchived ? "Archived" : "Active"}
-                    {repository.isFork ? " - Fork" : ""}
-                  </div>
-                </td>
-                <td className="px-4 py-3 capitalize text-muted-foreground">
-                  {repository.visibility.toLowerCase()}
-                </td>
-                <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
-                  {repository.defaultBranch ?? "None"}
-                </td>
-                <td className="px-4 py-3">
-                  <IndicatorBadge
-                    count={repository.linkedProjectCount}
-                    isActive={repository.hasLinkedProject}
-                    label="linked"
-                  />
-                </td>
-                <td className="px-4 py-3">
-                  <IndicatorBadge
-                    count={repository.issueCount}
-                    isActive={repository.hasIssuesCreated}
-                    label="total"
-                  />
-                  <div className="mt-1 text-xs text-muted-foreground">
-                    {repository.openIssueCount} open
-                  </div>
-                </td>
-                <td className="px-4 py-3 text-muted-foreground">
-                  {formatDate(repository.pushedAt)}
-                </td>
-                <td className="px-4 py-3 text-muted-foreground">
-                  {formatDate(repository.syncedAt)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
+function serializeRepository(
+  repository: RepositoryData["repositories"][number]
+): InventoryRepository {
+  return {
+    defaultBranch: repository.defaultBranch,
+    favorite: repository.favorite,
+    fullName: repository.fullName,
+    hasIssuesCreated: repository.hasIssuesCreated,
+    hasLinkedProject: repository.hasLinkedProject,
+    id: repository.id,
+    isArchived: repository.isArchived,
+    isFork: repository.isFork,
+    issueCount: repository.issueCount,
+    linkedProjectCount: repository.linkedProjectCount,
+    name: repository.name,
+    openIssueCount: repository.openIssueCount,
+    pushedAt: repository.pushedAt?.toISOString() ?? null,
+    syncedAt: repository.syncedAt?.toISOString() ?? null,
+    url: repository.url,
+    visibility: repository.visibility
+  };
 }
 
 export default async function Home({ searchParams }: HomeProps) {
@@ -248,8 +157,12 @@ export default async function Home({ searchParams }: HomeProps) {
     hasIssueFilter,
     hasProjectFilter
   );
-  const favoriteRepositories = repositories.filter((repository) => repository.favorite);
-  const otherRepositories = repositories.filter((repository) => !repository.favorite);
+  const favoriteRepositories = repositories
+    .filter((repository) => repository.favorite)
+    .map(serializeRepository);
+  const otherRepositories = repositories
+    .filter((repository) => !repository.favorite)
+    .map(serializeRepository);
 
   return (
     <main className="min-h-screen bg-background">
@@ -342,17 +255,10 @@ export default async function Home({ searchParams }: HomeProps) {
               </div>
             </div>
           ) : (
-            <div className="space-y-4">
-              {favoriteRepositories.length > 0 ? (
-                <RepositoryTable repositories={favoriteRepositories} title="Favorites" />
-              ) : null}
-              {otherRepositories.length > 0 ? (
-                <RepositoryTable
-                  repositories={otherRepositories}
-                  title={favoriteRepositories.length > 0 ? "All other repositories" : "Repositories"}
-                />
-              ) : null}
-            </div>
+            <RepositoryInventory
+              favoriteRepositories={favoriteRepositories}
+              otherRepositories={otherRepositories}
+            />
           )}
         </div>
       </section>
