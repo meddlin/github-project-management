@@ -31,10 +31,38 @@ model GitHubRepository {
   syncedAt           DateTime
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
+  issues             GitHubIssue[]
 
   @@index([fullName])
   @@index([favorite, fullName])
   @@index([owner])
+  @@index([syncedAt])
+}
+
+model GitHubIssue {
+  id           String           @id @default(cuid())
+  githubId     String
+  nodeId       String
+  repositoryId String
+  repository   GitHubRepository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  number       Int
+  title        String
+  state        String
+  url          String
+  authorLogin  String?
+  labels       String[]
+  assignees    String[]
+  commentCount Int
+  createdAt    DateTime
+  updatedAt    DateTime
+  closedAt     DateTime?
+  syncedAt     DateTime
+
+  @@unique([repositoryId, number])
+  @@unique([repositoryId, githubId])
+  @@unique([nodeId])
+  @@index([repositoryId, state, updatedAt])
+  @@index([repositoryId, number])
   @@index([syncedAt])
 }
 

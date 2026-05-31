@@ -40,6 +40,26 @@ type GitHubRepositoryNode = {
   visibility: string;
 };
 
+type GitHubIssueNode = {
+  assignees: {
+    nodes: Array<{ login: string } | null>;
+  };
+  author: { login: string } | null;
+  closedAt: string | null;
+  comments: { totalCount: number };
+  createdAt: string;
+  databaseId: number | null;
+  id: string;
+  labels: {
+    nodes: Array<{ name: string } | null>;
+  };
+  number: number;
+  state: string;
+  title: string;
+  updatedAt: string;
+  url: string;
+};
+
 type GitHubRepositoriesResponse = {
   data?: {
     viewer: {
@@ -48,6 +68,18 @@ type GitHubRepositoriesResponse = {
         pageInfo: GitHubPageInfo;
       };
     };
+  };
+  errors?: Array<{ message: string }>;
+};
+
+type GitHubIssuesResponse = {
+  data?: {
+    repository: {
+      issues: {
+        nodes: Array<GitHubIssueNode | null>;
+        pageInfo: GitHubPageInfo;
+      };
+    } | null;
   };
   errors?: Array<{ message: string }>;
 };
@@ -88,6 +120,51 @@ const repositoriesQuery = `
           updatedAt
           url
           visibility
+        }
+        pageInfo {
+          endCursor
+          hasNextPage
+        }
+      }
+    }
+  }
+`;
+
+const issuesQuery = `
+  query Issues($owner: String!, $name: String!, $after: String) {
+    repository(owner: $owner, name: $name) {
+      issues(
+        first: 100
+        after: $after
+        states: [OPEN, CLOSED]
+        orderBy: { field: UPDATED_AT, direction: DESC }
+      ) {
+        nodes {
+          assignees(first: 20) {
+            nodes {
+              login
+            }
+          }
+          author {
+            login
+          }
+          closedAt
+          comments {
+            totalCount
+          }
+          createdAt
+          databaseId
+          id
+          labels(first: 20) {
+            nodes {
+              name
+            }
+          }
+          number
+          state
+          title
+          updatedAt
+          url
         }
         pageInfo {
           endCursor
@@ -176,6 +253,58 @@ async function fetchGitHubRepositories(token: string): Promise<GitHubRepositoryN
   return repositories;
 }
 
+async function fetchGitHubIssues({
+  name,
+  owner,
+  token
+}: {
+  name: string;
+  owner: string;
+  token: string;
+}): Promise<GitHubIssueNode[]> {
+  const issues: GitHubIssueNode[] = [];
+  let after: string | null = null;
+
+  do {
+    const response = await fetch("https://api.github.com/graphql", {
+      body: JSON.stringify({
+        query: issuesQuery,
+        variables: { after, name, owner }
+      }),
+      headers: {
+        Accept: "application/vnd.github+json",
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        "User-Agent": "github-project-management"
+      },
+      method: "POST"
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `GitHub issues GraphQL request failed for ${owner}/${name}: ${response.status} ${response.statusText}`
+      );
+    }
+
+    const payload = (await response.json()) as GitHubIssuesResponse;
+
+    if (payload.errors?.length) {
+      throw new Error(payload.errors.map((error) => error.message).join("; "));
+    }
+
+    const connection = payload.data?.repository?.issues;
+
+    if (!connection) {
+      throw new Error(`GitHub GraphQL response did not include issues for ${owner}/${name}.`);
+    }
+
+    issues.push(...connection.nodes.filter((node): node is GitHubIssueNode => node !== null));
+    after = connection.pageInfo.hasNextPage ? connection.pageInfo.endCursor : null;
+  } while (after);
+
+  return issues;
+}
+
 async function syncRepositories(): Promise<void> {
   if (!requireEnvironment()) {
     return;
@@ -205,7 +334,7 @@ async function syncRepositories(): Promise<void> {
       const linkedProjectCount = repository.projectsV2.totalCount;
       const issueCount = repository.issues.totalCount;
 
-      await prisma.gitHubRepository.upsert({
+      const persistedRepository = await prisma.gitHubRepository.upsert({
         create: {
           defaultBranch: repository.defaultBranchRef?.name,
           fullName: repository.nameWithOwner,
@@ -249,6 +378,72 @@ async function syncRepositories(): Promise<void> {
         },
         where: {
           githubId
+        }
+      });
+
+      const issues = await fetchGitHubIssues({
+        name: repository.name,
+        owner: repository.owner.login,
+        token
+      });
+      const syncedIssueNodeIds: string[] = [];
+
+      for (const issue of issues) {
+        syncedIssueNodeIds.push(issue.id);
+
+        await prisma.gitHubIssue.upsert({
+          create: {
+            assignees: issue.assignees.nodes
+              .filter((assignee): assignee is { login: string } => assignee !== null)
+              .map((assignee) => assignee.login),
+            authorLogin: issue.author?.login ?? null,
+            closedAt: parseGitHubDate(issue.closedAt),
+            commentCount: issue.comments.totalCount,
+            createdAt: new Date(issue.createdAt),
+            githubId: issue.databaseId?.toString() ?? issue.id,
+            labels: issue.labels.nodes
+              .filter((label): label is { name: string } => label !== null)
+              .map((label) => label.name),
+            nodeId: issue.id,
+            number: issue.number,
+            repositoryId: persistedRepository.id,
+            state: issue.state,
+            syncedAt,
+            title: issue.title,
+            updatedAt: new Date(issue.updatedAt),
+            url: issue.url
+          },
+          update: {
+            assignees: issue.assignees.nodes
+              .filter((assignee): assignee is { login: string } => assignee !== null)
+              .map((assignee) => assignee.login),
+            authorLogin: issue.author?.login ?? null,
+            closedAt: parseGitHubDate(issue.closedAt),
+            commentCount: issue.comments.totalCount,
+            githubId: issue.databaseId?.toString() ?? issue.id,
+            labels: issue.labels.nodes
+              .filter((label): label is { name: string } => label !== null)
+              .map((label) => label.name),
+            number: issue.number,
+            state: issue.state,
+            syncedAt,
+            title: issue.title,
+            updatedAt: new Date(issue.updatedAt),
+            url: issue.url
+          },
+          where: {
+            repositoryId_number: {
+              number: issue.number,
+              repositoryId: persistedRepository.id
+            }
+          }
+        });
+      }
+
+      await prisma.gitHubIssue.deleteMany({
+        where: {
+          repositoryId: persistedRepository.id,
+          ...(syncedIssueNodeIds.length > 0 ? { nodeId: { notIn: syncedIssueNodeIds } } : {})
         }
       });
     }

@@ -1,6 +1,7 @@
 "use client";
 
 import { CheckCircle2, CircleX, Search } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { FavoriteToggle } from "./favorite-toggle";
 
@@ -17,6 +18,7 @@ export type InventoryRepository = {
   linkedProjectCount: number;
   name: string;
   openIssueCount: number;
+  owner: string;
   pushedAt: string | null;
   syncedAt: string | null;
   url: string;
@@ -84,6 +86,7 @@ function RepositoryTable({
               <th className="px-4 py-3 font-semibold">Default branch</th>
               <th className="px-4 py-3 font-semibold">Projects</th>
               <th className="px-4 py-3 font-semibold">Issues</th>
+              <th className="px-4 py-3 font-semibold">Planning</th>
               <th className="px-4 py-3 font-semibold">Last pushed</th>
               <th className="px-4 py-3 font-semibold">Last synced</th>
             </tr>
@@ -130,6 +133,16 @@ function RepositoryTable({
                   <div className="mt-1 text-xs text-muted-foreground">
                     {repository.openIssueCount} open
                   </div>
+                </td>
+                <td className="px-4 py-3">
+                  <Link
+                    className="inline-flex rounded-md border px-2.5 py-1.5 text-xs font-medium text-primary hover:bg-muted"
+                    href={`/${encodeURIComponent(repository.owner)}/${encodeURIComponent(
+                      repository.name
+                    )}/planning`}
+                  >
+                    Planning
+                  </Link>
                 </td>
                 <td className="px-4 py-3 text-muted-foreground">
                   {formatDate(repository.pushedAt)}
