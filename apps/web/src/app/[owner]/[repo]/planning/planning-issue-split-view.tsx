@@ -19,6 +19,8 @@ export type PlanningIssue = {
   id: string;
   labels: string[];
   number: number;
+  planningStatus: string;
+  planningStatusSource: string;
   state: string;
   title: string;
   updatedAt: string;

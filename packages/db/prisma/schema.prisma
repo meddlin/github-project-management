@@ -7,6 +7,22 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum PlanningStatus {
+  NO_STATUS
+  BACKLOG
+  READY
+  IN_PROGRESS
+  IN_REVIEW
+  DONE
+}
+
+enum PlanningStatusSource {
+  NONE
+  GITHUB_LABEL
+  GITHUB_PROJECT
+  LOCAL
+}
+
 model GitHubRepository {
   id                 String   @id @default(cuid())
   githubId           String   @unique
@@ -32,6 +48,7 @@ model GitHubRepository {
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
   issues             GitHubIssue[]
+  projects           GitHubRepositoryProject[]
 
   @@index([fullName])
   @@index([favorite, fullName])
@@ -57,13 +74,63 @@ model GitHubIssue {
   updatedAt    DateTime
   closedAt     DateTime?
   syncedAt     DateTime
+  planningStatus          PlanningStatus       @default(NO_STATUS)
+  planningStatusSource    PlanningStatusSource @default(NONE)
+  planningStatusUpdatedAt DateTime?
+  projectItems            GitHubProjectItem[]
 
   @@unique([repositoryId, number])
   @@unique([repositoryId, githubId])
   @@unique([nodeId])
+  @@index([repositoryId, planningStatus, updatedAt])
   @@index([repositoryId, state, updatedAt])
   @@index([repositoryId, number])
   @@index([syncedAt])
+}
+
+model GitHubProject {
+  id             String   @id @default(cuid())
+  nodeId         String   @unique
+  title          String
+  owner          String
+  url            String
+  importedAt     DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  repositories   GitHubRepositoryProject[]
+  items          GitHubProjectItem[]
+
+  @@index([owner, title])
+  @@index([importedAt])
+}
+
+model GitHubRepositoryProject {
+  id           String           @id @default(cuid())
+  repositoryId String
+  repository   GitHubRepository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  projectId    String
+  project      GitHubProject    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  importedAt   DateTime
+
+  @@unique([repositoryId, projectId])
+  @@index([projectId])
+}
+
+model GitHubProjectItem {
+  id                   String        @id @default(cuid())
+  nodeId               String        @unique
+  projectId            String
+  project              GitHubProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  issueId              String
+  issue                GitHubIssue   @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  importedStatusName   String?
+  importedStatusOption String?
+  importedAt           DateTime
+  itemUpdatedAt        DateTime?
+
+  @@unique([projectId, issueId])
+  @@index([issueId])
+  @@index([projectId, importedAt])
 }
 
 model GitHubRepositorySyncRun {

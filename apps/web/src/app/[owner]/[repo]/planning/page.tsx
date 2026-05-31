@@ -5,6 +5,7 @@ import {
   PlanningIssueSplitView,
   type PlanningIssue
 } from "./planning-issue-split-view";
+import { PlanningKanbanBoard } from "./planning-kanban-board";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +13,9 @@ type PlanningPageProps = {
   params: Promise<{
     owner: string;
     repo: string;
+  }>;
+  searchParams?: Promise<{
+    view?: string | string[];
   }>;
 };
 
@@ -73,6 +77,8 @@ function serializeIssue(issue: NonNullable<PlanningData["repository"]>["issues"]
     id: issue.id,
     labels: issue.labels,
     number: issue.number,
+    planningStatus: issue.planningStatus,
+    planningStatusSource: issue.planningStatusSource,
     state: issue.state,
     title: issue.title,
     updatedAt: issue.updatedAt.toISOString(),
@@ -80,8 +86,48 @@ function serializeIssue(issue: NonNullable<PlanningData["repository"]>["issues"]
   };
 }
 
-export default async function PlanningPage({ params }: PlanningPageProps) {
+function buildPlanningHref({
+  owner,
+  repo,
+  view
+}: {
+  owner: string;
+  repo: string;
+  view: "list" | "board";
+}) {
+  return `/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/planning?view=${view}`;
+}
+
+function PlanningTab({
+  href,
+  isActive,
+  label
+}: {
+  href: string;
+  isActive: boolean;
+  label: string;
+}) {
+  return (
+    <Link
+      className={`rounded-md px-3 py-1.5 text-sm font-medium ${
+        isActive
+          ? "bg-foreground text-background"
+          : "text-muted-foreground hover:bg-muted hover:text-foreground"
+      }`}
+      href={href}
+    >
+      {label}
+    </Link>
+  );
+}
+
+export default async function PlanningPage({ params, searchParams }: PlanningPageProps) {
   const { owner, repo } = await params;
+  const resolvedSearchParams = await searchParams;
+  const viewValue = Array.isArray(resolvedSearchParams?.view)
+    ? resolvedSearchParams.view[0]
+    : resolvedSearchParams?.view;
+  const activeView = viewValue === "board" ? "board" : "list";
   const decodedOwner = decodeURIComponent(owner);
   const decodedRepo = decodeURIComponent(repo);
   const { error, repository } = await getPlanningData(decodedOwner, decodedRepo);
@@ -135,6 +181,27 @@ export default async function PlanningPage({ params }: PlanningPageProps) {
 
           {repository ? (
             <>
+              <div className="mb-4 inline-flex rounded-md border bg-card p-1">
+                <PlanningTab
+                  href={buildPlanningHref({
+                    owner: decodedOwner,
+                    repo: decodedRepo,
+                    view: "list"
+                  })}
+                  isActive={activeView === "list"}
+                  label="List"
+                />
+                <PlanningTab
+                  href={buildPlanningHref({
+                    owner: decodedOwner,
+                    repo: decodedRepo,
+                    view: "board"
+                  })}
+                  isActive={activeView === "board"}
+                  label="Board"
+                />
+              </div>
+
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border bg-card px-4 py-3 text-sm">
                 <div className="flex items-center gap-2 font-medium text-card-foreground">
                   <CircleAlert aria-hidden="true" className="h-4 w-4 text-primary" />
@@ -146,7 +213,15 @@ export default async function PlanningPage({ params }: PlanningPageProps) {
                 </div>
               </div>
 
-              <PlanningIssueSplitView issues={repository.issues.map(serializeIssue)} />
+              {activeView === "board" ? (
+                <PlanningKanbanBoard
+                  issues={repository.issues.map(serializeIssue)}
+                  owner={decodedOwner}
+                  repo={decodedRepo}
+                />
+              ) : (
+                <PlanningIssueSplitView issues={repository.issues.map(serializeIssue)} />
+              )}
             </>
           ) : null}
         </div>
