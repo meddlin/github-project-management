@@ -23,12 +23,18 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { CalendarClock, ExternalLink, GripVertical, MessageSquare } from "lucide-react";
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import {
   updateIssuePlanningStatus,
   type PlanningStatusValue
 } from "../../../actions";
 import type { PlanningIssue } from "./planning-issue-split-view";
+
+export type PlanningKanbanCard = Omit<PlanningIssue, "number" | "url"> & {
+  contentType?: "ISSUE" | "DRAFT_ISSUE";
+  number: number | null;
+  url: string | null;
+};
 
 const columns: Array<{ label: string; status: PlanningStatusValue }> = [
   { label: "No status", status: "NO_STATUS" },
@@ -115,6 +121,14 @@ function getKanbanDragData(value: unknown): KanbanDragData | null {
 }
 
 function GitHubStateBadge({ state }: { state: string }) {
+  if (state.toUpperCase() === "DRAFT") {
+    return (
+      <span className="rounded-md border border-warning-border bg-warning px-1.5 py-0.5 text-[11px] font-semibold text-warning-foreground">
+        Draft
+      </span>
+    );
+  }
+
   const isOpen = state.toUpperCase() === "OPEN";
 
   return (
@@ -136,16 +150,18 @@ function KanbanCard({
   status
 }: {
   isOverlay?: boolean;
-  issue: PlanningIssue;
+  issue: PlanningKanbanCard;
   status: PlanningStatusValue;
 }) {
+  const isDraft = issue.contentType === "DRAFT_ISSUE";
+  const canDrag = !isOverlay && !isDraft;
   const { attributes, isDragging, listeners, setNodeRef, transform, transition } = useSortable({
     data: {
       issueId: issue.id,
       status,
       type: "card"
     },
-    disabled: isOverlay,
+    disabled: !canDrag,
     id: issue.id
   });
   const style = {
@@ -162,18 +178,26 @@ function KanbanCard({
       style={style}
     >
       <div className="flex items-start gap-2">
-        <button
-          aria-label={`Drag issue ${issue.number}`}
-          className="mt-0.5 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-          type="button"
-          {...attributes}
-          {...listeners}
-        >
-          <GripVertical aria-hidden="true" className="h-4 w-4" />
-        </button>
+        {isDraft ? (
+          <span className="mt-1 rounded-md border bg-card px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
+            Draft
+          </span>
+        ) : (
+          <button
+            aria-label={`Drag issue ${issue.number}`}
+            className="mt-0.5 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+            type="button"
+            {...attributes}
+            {...listeners}
+          >
+            <GripVertical aria-hidden="true" className="h-4 w-4" />
+          </button>
+        )}
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
-            <span className="font-mono text-xs text-muted-foreground">#{issue.number}</span>
+            <span className="font-mono text-xs text-muted-foreground">
+              {issue.number ? `#${issue.number}` : "Draft issue"}
+            </span>
             <GitHubStateBadge state={issue.state} />
           </div>
           <h3 className="mt-2 line-clamp-3 text-sm font-semibold leading-5 text-card-foreground">
@@ -197,7 +221,11 @@ function KanbanCard({
 
       <div className="mt-3 flex items-center justify-between gap-3 text-xs text-muted-foreground">
         <span className="truncate">
-          {issue.assignees.length > 0 ? issue.assignees.join(", ") : "Unassigned"}
+          {issue.assignees.length > 0
+            ? issue.assignees.join(", ")
+            : issue.authorLogin
+              ? `By ${issue.authorLogin}`
+              : "Unassigned"}
         </span>
         <span className="shrink-0">{formatDate(issue.updatedAt)}</span>
       </div>
@@ -210,19 +238,27 @@ function KanbanCard({
         </div>
       ) : null}
       <div className="mt-3 flex items-center justify-between gap-3 text-xs text-muted-foreground">
-        <span className="inline-flex items-center gap-1">
-          <MessageSquare aria-hidden="true" className="h-3.5 w-3.5" />
-          {issue.commentCount}
-        </span>
-        <a
-          className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
-          href={issue.url}
-          rel="noreferrer"
-          target="_blank"
-        >
-          GitHub
-          <ExternalLink aria-hidden="true" className="h-3.5 w-3.5" />
-        </a>
+        {issue.contentType === "DRAFT_ISSUE" ? (
+          <span className="font-medium text-muted-foreground">Project draft</span>
+        ) : (
+          <>
+            <span className="inline-flex items-center gap-1">
+              <MessageSquare aria-hidden="true" className="h-3.5 w-3.5" />
+              {issue.commentCount}
+            </span>
+            {issue.url ? (
+              <a
+                className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+                href={issue.url}
+                rel="noreferrer"
+                target="_blank"
+              >
+                GitHub
+                <ExternalLink aria-hidden="true" className="h-3.5 w-3.5" />
+              </a>
+            ) : null}
+          </>
+        )}
       </div>
     </article>
   );
@@ -233,7 +269,7 @@ function KanbanColumn({
   label,
   status
 }: {
-  issues: PlanningIssue[];
+  issues: PlanningKanbanCard[];
   label: string;
   status: PlanningStatusValue;
 }) {
@@ -286,13 +322,17 @@ export function PlanningKanbanBoard({
   owner,
   repo
 }: {
-  issues: PlanningIssue[];
+  issues: PlanningKanbanCard[];
   owner: string;
   repo: string;
 }) {
   const [localIssues, setLocalIssues] = useState(issues);
   const [activeIssueId, setActiveIssueId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
+
+  useEffect(() => {
+    setLocalIssues(issues);
+  }, [issues]);
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
@@ -305,7 +345,7 @@ export function PlanningKanbanBoard({
   );
   const activeIssue = localIssues.find((issue) => issue.id === activeIssueId) ?? null;
   const issuesByStatus = useMemo(() => {
-    return columns.reduce<Record<PlanningStatusValue, PlanningIssue[]>>(
+    return columns.reduce<Record<PlanningStatusValue, PlanningKanbanCard[]>>(
       (groupedIssues, column) => {
         groupedIssues[column.status] = localIssues
           .filter((issue) => normalizeIssueStatus(issue.planningStatus) === column.status)
@@ -339,6 +379,12 @@ export function PlanningKanbanBoard({
     }
 
     const issueId = String(event.active.id);
+    const draggedIssue = localIssues.find((issue) => issue.id === issueId);
+
+    if (draggedIssue?.contentType === "DRAFT_ISSUE") {
+      return;
+    }
+
     const activeData = getKanbanDragData(event.active.data.current);
     const overData = getKanbanDragData(event.over.data.current);
     const currentStatus = activeData?.status;

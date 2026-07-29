@@ -2,6 +2,7 @@
 
 import { prisma } from "@gpm/db";
 import { revalidatePath } from "next/cache";
+import { syncRepositoryPlanningDataFromGitHub } from "./github-planning-sync";
 
 type GitHubLabel = {
   name: string;
@@ -33,15 +34,65 @@ export async function setRepositoryFavorite(repositoryId: string, favorite: bool
   }
 
   await prisma.gitHubRepository.update({
-    data: {
-      favorite
-    },
+    data: favorite
+      ? {
+          favorite
+        }
+      : {
+          favorite,
+          favoriteOrder: null
+        },
     where: {
       id: repositoryId
     }
   });
 
   revalidatePath("/");
+  revalidatePath("/repos");
+  revalidatePath("/projects");
+}
+
+export async function reorderFavoriteRepositories(repositoryIds: string[]) {
+  if (!Array.isArray(repositoryIds) || repositoryIds.length === 0) {
+    throw new Error("Repository ids are required.");
+  }
+
+  const uniqueRepositoryIds = [...new Set(repositoryIds)];
+
+  if (uniqueRepositoryIds.length !== repositoryIds.length) {
+    throw new Error("Repository ids must be unique.");
+  }
+
+  const favoriteRepositories = await prisma.gitHubRepository.findMany({
+    select: {
+      id: true
+    },
+    where: {
+      favorite: true,
+      id: {
+        in: repositoryIds
+      }
+    }
+  });
+
+  if (favoriteRepositories.length !== repositoryIds.length) {
+    throw new Error("All reordered repositories must be favorites.");
+  }
+
+  await prisma.$transaction(
+    repositoryIds.map((repositoryId, index) =>
+      prisma.gitHubRepository.update({
+        data: {
+          favoriteOrder: index
+        },
+        where: {
+          id: repositoryId
+        }
+      })
+    )
+  );
+
+  revalidatePath("/projects");
 }
 
 const planningStatuses = [
@@ -59,7 +110,7 @@ function requireGitHubToken() {
   const token = process.env.GITHUB_PAT;
 
   if (!token) {
-    throw new Error("GITHUB_PAT is required to create issues.");
+    throw new Error("GITHUB_PAT is required to access GitHub.");
   }
 
   return token;
@@ -282,6 +333,7 @@ export async function createPlanningIssue({
   }
 
   revalidatePath(`/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/planning`);
+  revalidatePath("/projects");
 
   return {
     number: issue.number,
@@ -320,4 +372,33 @@ export async function updateIssuePlanningStatus({
   });
 
   revalidatePath(`/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/planning`);
+  revalidatePath("/projects");
+}
+
+export async function syncRepositoryPlanningData({
+  owner,
+  repo
+}: {
+  owner: string;
+  repo: string;
+}) {
+  if (!owner || !repo) {
+    throw new Error("Repository owner and name are required.");
+  }
+
+  const token = requireGitHubToken();
+  const result = await syncRepositoryPlanningDataFromGitHub({
+    name: repo,
+    owner,
+    token
+  });
+
+  revalidatePath("/projects");
+  revalidatePath(`/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/planning`);
+
+  return {
+    issueCount: result.issueCount,
+    projectCount: result.projectCount,
+    syncedAt: result.syncedAt.toISOString()
+  };
 }

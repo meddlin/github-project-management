@@ -23,6 +23,11 @@ enum PlanningStatusSource {
   LOCAL
 }
 
+enum GitHubProjectItemContentType {
+  ISSUE
+  DRAFT_ISSUE
+}
+
 model GitHubRepository {
   id                 String   @id @default(cuid())
   githubId           String   @unique
@@ -44,6 +49,7 @@ model GitHubRepository {
   issueCount         Int
   openIssueCount     Int
   favorite           Boolean  @default(false)
+  favoriteOrder      Int?
   syncedAt           DateTime
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
@@ -52,6 +58,7 @@ model GitHubRepository {
 
   @@index([fullName])
   @@index([favorite, fullName])
+  @@index([favorite, favoriteOrder, fullName])
   @@index([owner])
   @@index([syncedAt])
 }
@@ -119,12 +126,19 @@ model GitHubRepositoryProject {
 }
 
 model GitHubProjectItem {
-  id                   String        @id @default(cuid())
-  nodeId               String        @unique
+  id                   String                       @id @default(cuid())
+  nodeId               String                       @unique
   projectId            String
-  project              GitHubProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  issueId              String
-  issue                GitHubIssue   @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  project              GitHubProject                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  issueId              String?
+  issue                GitHubIssue?                 @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  contentType          GitHubProjectItemContentType @default(ISSUE)
+  draftTitle           String?
+  draftBodyText        String?
+  draftAuthorLogin     String?
+  draftAssignees       String[]                     @default([])
+  draftCreatedAt       DateTime?
+  draftUpdatedAt       DateTime?
   importedStatusName   String?
   importedStatusOption String?
   importedAt           DateTime
