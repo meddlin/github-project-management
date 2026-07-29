@@ -24,6 +24,15 @@ docker compose up -d postgres
 pnpm db:generate
 ```
 
+## Upcoming: Commands to resync data
+
+```sh
+docker compose up -d postgres
+pnpm --filter @gpm/cli dev -- doctor
+pnpm --filter @gpm/cli dev -- repos sync
+pnpm --filter @gpm/cli dev -- projects import-statuses
+```
+
 ## Commands
 
 ```sh
@@ -38,18 +47,6 @@ pnpm --filter @gpm/cli dev -- doctor
 pnpm --filter @gpm/cli dev -- repos sync
 pnpm --filter @gpm/cli dev -- projects import-statuses
 ```
-
-## GitHub Webhook
-
-To keep issue state in sync when issues anre updated i GitHub, configure an Issues webhook that
-targets the deployed web app:
-
-- Payload URL: `https://<your-vercel-project>.vercel.app/api/github/webhooks`
-- Content type: `application/json`
-- Secret: the value of `GITHUB_WEBHOOK_SECRET`
-- Events: Issues
-
-Set `DATABASE_URL`, `GITHUB_PAT`, and `GITHUB_WEBHOOK_SECRET` in Vercel.
 
 ## Docker
 
