@@ -39,6 +39,18 @@ pnpm --filter @gpm/cli dev -- repos sync
 pnpm --filter @gpm/cli dev -- projects import-statuses
 ```
 
+## GitHub Webhook
+
+To keep issue state in sync when issues anre updated i GitHub, configure an Issues webhook that
+targets the deployed web app:
+
+- Payload URL: `https://<your-vercel-project>.vercel.app/api/github/webhooks`
+- Content type: `application/json`
+- Secret: the value of `GITHUB_WEBHOOK_SECRET`
+- Events: Issues
+
+Set `DATABASE_URL`, `GITHUB_PAT`, and `GITHUB_WEBHOOK_SECRET` in Vercel.
+
 ## Docker
 
 ```sh
