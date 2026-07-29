@@ -58,8 +58,8 @@ function StateBadge({ state }: { state: string }) {
     <span
       className={`inline-flex min-w-16 items-center justify-center rounded-md border px-2 py-1 text-xs font-semibold ${
         isOpen
-          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-          : "border-zinc-200 bg-zinc-50 text-zinc-600"
+          ? "border-success-border bg-success text-success-foreground"
+          : "border-border bg-muted text-muted-foreground"
       }`}
     >
       {isOpen ? "Open" : "Closed"}
@@ -206,7 +206,7 @@ export function PlanningIssueSplitView({ issues }: { issues: PlanningIssue[] }) 
               </a>
             </div>
 
-            <div className="space-y-5 px-5 py-5">
+            <div className="flex flex-col gap-5 px-5 py-5">
               <div className="grid gap-3">
                 <MetadataItem icon={UserRound}>
                   Author: {selectedIssue.authorLogin ?? "Unknown"}

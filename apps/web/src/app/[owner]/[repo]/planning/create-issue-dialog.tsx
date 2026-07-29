@@ -112,7 +112,7 @@ export function CreateIssueDialog({ owner, repo }: { owner: string; repo: string
       </button>
 
       {isOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-overlay px-4 py-6">
           <div className="max-h-full w-full max-w-2xl overflow-y-auto rounded-md border bg-background shadow-xl">
             <div className="flex items-center justify-between gap-4 border-b px-5 py-4">
               <div>
@@ -132,7 +132,7 @@ export function CreateIssueDialog({ owner, repo }: { owner: string; repo: string
               </button>
             </div>
 
-            <form className="space-y-5 px-5 py-5" onSubmit={handleSubmit}>
+            <form className="flex flex-col gap-5 px-5 py-5" onSubmit={handleSubmit}>
               <div>
                 <label className="text-sm font-medium text-foreground" htmlFor="issue-title">
                   Title
@@ -213,7 +213,7 @@ export function CreateIssueDialog({ owner, repo }: { owner: string; repo: string
                 </div>
 
                 {labelError ? (
-                  <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                  <p className="mt-2 rounded-md border border-warning-border bg-warning px-3 py-2 text-sm text-warning-foreground">
                     {labelError}
                   </p>
                 ) : null}
@@ -248,7 +248,7 @@ export function CreateIssueDialog({ owner, repo }: { owner: string; repo: string
               </div>
 
               {submitError ? (
-                <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                <div className="rounded-md border border-destructive-border bg-destructive px-3 py-2 text-sm text-destructive-foreground">
                   {submitError}
                 </div>
               ) : null}

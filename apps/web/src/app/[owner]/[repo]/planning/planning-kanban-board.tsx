@@ -121,8 +121,8 @@ function GitHubStateBadge({ state }: { state: string }) {
     <span
       className={`rounded-md border px-1.5 py-0.5 text-[11px] font-semibold ${
         isOpen
-          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-          : "border-zinc-200 bg-zinc-50 text-zinc-600"
+          ? "border-success-border bg-success text-success-foreground"
+          : "border-border bg-muted text-muted-foreground"
       }`}
     >
       {isOpen ? "Open" : "Closed"}
@@ -262,7 +262,7 @@ function KanbanColumn({
         items={issues.map((issue) => issue.id)}
         strategy={verticalListSortingStrategy}
       >
-        <div className="flex-1 space-y-3 overflow-y-auto p-3">
+        <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-3">
           {issues.map((issue) => (
             <KanbanCard issue={issue} key={issue.id} status={status} />
           ))}

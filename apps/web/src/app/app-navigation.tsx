@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { ThemeToggle } from "./theme-toggle";
 
 const navigationItems = [
   {
@@ -26,26 +27,32 @@ export function AppNavigation() {
         <Link className="text-sm font-semibold text-foreground" href="/">
           GitHub Project Management
         </Link>
-        <nav aria-label="Primary navigation" className="flex items-center gap-1 rounded-md border bg-card p-1">
-          {navigationItems.map((item) => {
-            const isActive = item.match(pathname);
+        <div className="flex items-center gap-2">
+          <nav
+            aria-label="Primary navigation"
+            className="flex items-center gap-1 rounded-md border bg-card p-1"
+          >
+            {navigationItems.map((item) => {
+              const isActive = item.match(pathname);
 
-            return (
-              <Link
-                aria-current={isActive ? "page" : undefined}
-                className={`rounded-md px-3 py-1.5 text-sm font-medium ${
-                  isActive
-                    ? "bg-foreground text-background"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                }`}
-                href={item.href}
-                key={item.href}
-              >
-                {item.label}
-              </Link>
-            );
-          })}
-        </nav>
+              return (
+                <Link
+                  aria-current={isActive ? "page" : undefined}
+                  className={`rounded-md px-3 py-1.5 text-sm font-medium ${
+                    isActive
+                      ? "bg-foreground text-background"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  }`}
+                  href={item.href}
+                  key={item.href}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
+          </nav>
+          <ThemeToggle />
+        </div>
       </div>
     </header>
   );

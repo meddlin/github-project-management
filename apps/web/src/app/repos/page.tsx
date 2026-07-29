@@ -179,7 +179,7 @@ export default async function ReposPage({ searchParams }: ReposProps) {
 
         <div className="py-8">
           {error ? (
-            <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <div className="mb-4 rounded-md border border-destructive-border bg-destructive px-4 py-3 text-sm text-destructive-foreground">
               Unable to load repository inventory from Postgres. Check `DATABASE_URL` and ensure
               the Prisma migration has been applied.
             </div>
