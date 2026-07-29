@@ -7,13 +7,25 @@ export const metadata: Metadata = {
   title: "GitHub Project Management"
 };
 
+const themeScript = `
+try {
+  const storedTheme = window.localStorage.getItem("gpm-theme");
+  const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const theme = storedTheme === "light" || storedTheme === "dark" ? storedTheme : prefersDark ? "dark" : "light";
+  document.documentElement.classList.toggle("dark", theme === "dark");
+} catch {}
+`;
+
 export default function RootLayout({
   children
 }: Readonly<{
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+      </head>
       <body>
         <AppNavigation />
         {children}

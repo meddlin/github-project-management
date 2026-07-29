@@ -21,8 +21,8 @@ export function FavoriteToggle({ favorite, repositoryId }: FavoriteToggleProps) 
       aria-label={optimisticFavorite ? "Remove from favorites" : "Add to favorites"}
       className={`inline-flex h-8 w-8 items-center justify-center rounded-md border transition ${
         optimisticFavorite
-          ? "border-amber-300 bg-amber-50 text-amber-500 hover:bg-amber-100"
-          : "border-zinc-200 bg-card text-muted-foreground hover:bg-muted hover:text-foreground"
+          ? "border-warning-border bg-warning text-warning-foreground hover:bg-warning-hover"
+          : "border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground"
       } disabled:cursor-not-allowed disabled:opacity-70`}
       disabled={isPending}
       onClick={() => {

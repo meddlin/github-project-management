@@ -10,6 +10,17 @@
   --color-border: var(--border);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-success-border: var(--success-border);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-border: var(--warning-border);
+  --color-warning-hover: var(--warning-hover);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-border: var(--destructive-border);
+  --color-overlay: var(--overlay);
   --font-sans: var(--font-sans-stack);
   --font-mono: var(--font-mono-stack);
 }
@@ -26,6 +37,40 @@
   --border: hsl(214.3 31.8% 91.4%);
   --primary: hsl(221.2 83.2% 53.3%);
   --primary-foreground: hsl(210 40% 98%);
+  --success: hsl(142.1 76.2% 96.3%);
+  --success-foreground: hsl(142.8 64.2% 24.1%);
+  --success-border: hsl(141.7 64.2% 85.1%);
+  --warning: hsl(48 96.5% 88.8%);
+  --warning-foreground: hsl(25 75% 26.7%);
+  --warning-border: hsl(45.9 96.7% 64.5%);
+  --warning-hover: hsl(48 96.6% 76.7%);
+  --destructive: hsl(0 85.7% 97.3%);
+  --destructive-foreground: hsl(0 74.7% 41.8%);
+  --destructive-border: hsl(0 93.5% 81.8%);
+  --overlay: hsl(0 0% 0% / 40%);
+}
+
+.dark {
+  --background: hsl(222.2 47.4% 6.5%);
+  --foreground: hsl(210 40% 98%);
+  --card: hsl(222.2 47.4% 8.8%);
+  --card-foreground: hsl(210 40% 98%);
+  --muted: hsl(217.2 32.6% 17.5%);
+  --muted-foreground: hsl(215 20.2% 65.1%);
+  --border: hsl(217.2 32.6% 17.5%);
+  --primary: hsl(217.2 91.2% 59.8%);
+  --primary-foreground: hsl(222.2 47.4% 11.2%);
+  --success: hsl(143.8 61.2% 14.5%);
+  --success-foreground: hsl(141.7 70.6% 73.3%);
+  --success-border: hsl(142.4 71.8% 29.2%);
+  --warning: hsl(45.4 93.4% 15.3%);
+  --warning-foreground: hsl(48 96.6% 76.7%);
+  --warning-border: hsl(35.5 91.7% 32.9%);
+  --warning-hover: hsl(45.4 93.4% 20.3%);
+  --destructive: hsl(0 62.8% 16.6%);
+  --destructive-foreground: hsl(0 93.5% 81.8%);
+  --destructive-border: hsl(0 62.8% 30.6%);
+  --overlay: hsl(0 0% 0% / 65%);
 }
 
 * {

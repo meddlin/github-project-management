@@ -51,8 +51,8 @@ function IndicatorBadge({
     <span
       className={`inline-flex min-w-24 items-center justify-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium ${
         isActive
-          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-          : "border-zinc-200 bg-zinc-50 text-zinc-600"
+          ? "border-success-border bg-success text-success-foreground"
+          : "border-border bg-muted text-muted-foreground"
       }`}
     >
       <Icon aria-hidden="true" className="h-3.5 w-3.5" />
@@ -198,7 +198,7 @@ export function RepositoryInventory({
   const hasSearchQuery = query.trim().length > 0;
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-card px-4 py-3">
         <label className="text-sm font-medium text-card-foreground" htmlFor="repository-search">
           Search repositories
