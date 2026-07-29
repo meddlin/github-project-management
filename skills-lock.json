@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "skills": {
+    "next-best-practices": {
+      "source": "laguagu/claude-code-nextjs-skills",
+      "sourceType": "github",
+      "skillPath": "skills/next-best-practices/SKILL.md",
+      "computedHash": "d7d2faad22806e2947b8e18809d3548bd716917f8f6b5d7125dadabaf03ba013"
+    },
+    "shadcn": {
+      "source": "shadcn/ui",
+      "sourceType": "github",
+      "skillPath": "skills/shadcn/SKILL.md",
+      "computedHash": "c1a68ee06a668aced9ab2b5fbdea5f989864123794eb2e056b339a072dbb7f10"
+    }
+  }
+}

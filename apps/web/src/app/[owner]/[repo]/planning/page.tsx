@@ -141,11 +141,11 @@ export default async function PlanningPage({ params, searchParams }: PlanningPag
 
   return (
     <main className="min-h-screen bg-background">
-      <section className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-6 py-8">
+      <section className="mx-[5%] flex min-h-screen max-w-none flex-col py-8">
         <header className="flex flex-wrap items-center justify-between gap-4 border-b pb-5">
           <div>
-            <Link className="text-sm font-medium text-primary hover:underline" href="/">
-              Repository inventory
+            <Link className="text-sm font-medium text-primary hover:underline" href="/repos">
+              Repos
             </Link>
             <h1 className="mt-1 text-3xl font-semibold tracking-normal text-foreground">
               {decodedOwner}/{decodedRepo} planning
@@ -177,8 +177,8 @@ export default async function PlanningPage({ params, searchParams }: PlanningPag
                 <h2 className="text-lg font-semibold text-card-foreground">Repository not found</h2>
                 <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
                   No synced repository matches {decodedOwner}/{decodedRepo}. Return to{" "}
-                  <Link className="font-medium text-primary hover:underline" href="/">
-                    repository inventory
+                  <Link className="font-medium text-primary hover:underline" href="/repos">
+                    repos
                   </Link>{" "}
                   to choose an available repository.
                 </p>
