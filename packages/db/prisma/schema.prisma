@@ -23,6 +23,11 @@ enum PlanningStatusSource {
   LOCAL
 }
 
+enum GitHubProjectItemContentType {
+  ISSUE
+  DRAFT_ISSUE
+}
+
 model GitHubRepository {
   id                 String   @id @default(cuid())
   githubId           String   @unique
@@ -119,12 +124,19 @@ model GitHubRepositoryProject {
 }
 
 model GitHubProjectItem {
-  id                   String        @id @default(cuid())
-  nodeId               String        @unique
+  id                   String                       @id @default(cuid())
+  nodeId               String                       @unique
   projectId            String
-  project              GitHubProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  issueId              String
-  issue                GitHubIssue   @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  project              GitHubProject                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  issueId              String?
+  issue                GitHubIssue?                 @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  contentType          GitHubProjectItemContentType @default(ISSUE)
+  draftTitle           String?
+  draftBodyText        String?
+  draftAuthorLogin     String?
+  draftAssignees       String[]                     @default([])
+  draftCreatedAt       DateTime?
+  draftUpdatedAt       DateTime?
   importedStatusName   String?
   importedStatusOption String?
   importedAt           DateTime

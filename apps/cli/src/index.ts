@@ -79,14 +79,33 @@ type GitHubRepositoryProjectNode = {
   url: string;
 };
 
-type GitHubProjectItemNode = {
-  content: {
-    id: string;
-    number: number;
-    repository: {
-      nameWithOwner: string;
+type GitHubProjectItemContentNode =
+  | {
+      __typename: "Issue";
+      id: string;
+      number: number;
+      repository: {
+        nameWithOwner: string;
+      } | null;
+    }
+  | {
+      __typename: "DraftIssue";
+      assignees: {
+        nodes: Array<{ login: string } | null>;
+      };
+      bodyText: string;
+      createdAt: string;
+      creator: { login: string } | null;
+      id: string;
+      title: string;
+      updatedAt: string;
+    }
+  | {
+      __typename: string;
     };
-  } | null;
+
+type GitHubProjectItemNode = {
+  content: GitHubProjectItemContentNode | null;
   fieldValueByName: {
     field: { id: string; name: string } | null;
     name: string | null;
@@ -287,12 +306,28 @@ const projectItemsQuery = `
             id
             updatedAt
             content {
+              __typename
               ... on Issue {
                 id
                 number
                 repository {
                   nameWithOwner
                 }
+              }
+              ... on DraftIssue {
+                assignees(first: 20) {
+                  nodes {
+                    login
+                  }
+                }
+                bodyText
+                createdAt
+                creator {
+                  login
+                }
+                id
+                title
+                updatedAt
               }
             }
             fieldValueByName(name: "Status") {
@@ -399,6 +434,18 @@ function requireEnvironment(): boolean {
 
 function parseGitHubDate(value: string | null): Date | null {
   return value ? new Date(value) : null;
+}
+
+function isDraftIssueContent(
+  content: GitHubProjectItemContentNode
+): content is Extract<GitHubProjectItemContentNode, { __typename: "DraftIssue" }> {
+  return content.__typename === "DraftIssue" && "title" in content;
+}
+
+function isIssueContent(
+  content: GitHubProjectItemContentNode
+): content is Extract<GitHubProjectItemContentNode, { __typename: "Issue" }> {
+  return content.__typename === "Issue" && "id" in content;
 }
 
 async function fetchGitHubRepositories(token: string): Promise<GitHubRepositoryNode[]> {
@@ -958,7 +1005,58 @@ async function importProjectStatuses(): Promise<void> {
         });
 
         for (const item of items) {
-          if (!item.content?.id) {
+          if (!item.content) {
+            continue;
+          }
+
+          const statusValue = item.fieldValueByName;
+
+          if (isDraftIssueContent(item.content)) {
+            const draftAssignees = item.content.assignees.nodes
+              .filter((assignee): assignee is { login: string } => assignee !== null)
+              .map((assignee) => assignee.login);
+
+            await prisma.gitHubProjectItem.upsert({
+              create: {
+                contentType: "DRAFT_ISSUE",
+                draftAssignees,
+                draftAuthorLogin: item.content.creator?.login ?? null,
+                draftBodyText: item.content.bodyText,
+                draftCreatedAt: new Date(item.content.createdAt),
+                draftTitle: item.content.title,
+                draftUpdatedAt: new Date(item.content.updatedAt),
+                importedAt,
+                importedStatusName: statusValue?.name ?? null,
+                importedStatusOption: statusValue?.optionId ?? null,
+                itemUpdatedAt: parseGitHubDate(statusValue?.updatedAt ?? item.updatedAt),
+                nodeId: item.id,
+                projectId: persistedProject.id
+              },
+              update: {
+                contentType: "DRAFT_ISSUE",
+                draftAssignees,
+                draftAuthorLogin: item.content.creator?.login ?? null,
+                draftBodyText: item.content.bodyText,
+                draftCreatedAt: new Date(item.content.createdAt),
+                draftTitle: item.content.title,
+                draftUpdatedAt: new Date(item.content.updatedAt),
+                importedAt,
+                importedStatusName: statusValue?.name ?? null,
+                importedStatusOption: statusValue?.optionId ?? null,
+                issueId: null,
+                itemUpdatedAt: parseGitHubDate(statusValue?.updatedAt ?? item.updatedAt),
+                projectId: persistedProject.id
+              },
+              where: {
+                nodeId: item.id
+              }
+            });
+
+            importedItemCount += 1;
+            continue;
+          }
+
+          if (!isIssueContent(item.content)) {
             continue;
           }
 
@@ -972,10 +1070,15 @@ async function importProjectStatuses(): Promise<void> {
             continue;
           }
 
-          const statusValue = item.fieldValueByName;
-
           await prisma.gitHubProjectItem.upsert({
             create: {
+              contentType: "ISSUE",
+              draftAssignees: [],
+              draftAuthorLogin: null,
+              draftBodyText: null,
+              draftCreatedAt: null,
+              draftTitle: null,
+              draftUpdatedAt: null,
               importedAt,
               importedStatusName: statusValue?.name ?? null,
               importedStatusOption: statusValue?.optionId ?? null,
@@ -985,6 +1088,13 @@ async function importProjectStatuses(): Promise<void> {
               projectId: persistedProject.id
             },
             update: {
+              contentType: "ISSUE",
+              draftAssignees: [],
+              draftAuthorLogin: null,
+              draftBodyText: null,
+              draftCreatedAt: null,
+              draftTitle: null,
+              draftUpdatedAt: null,
               importedAt,
               importedStatusName: statusValue?.name ?? null,
               importedStatusOption: statusValue?.optionId ?? null,

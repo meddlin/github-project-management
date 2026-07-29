@@ -2,6 +2,7 @@
 
 import { prisma } from "@gpm/db";
 import { revalidatePath } from "next/cache";
+import { syncRepositoryPlanningDataFromGitHub } from "./github-planning-sync";
 
 type GitHubLabel = {
   name: string;
@@ -42,6 +43,8 @@ export async function setRepositoryFavorite(repositoryId: string, favorite: bool
   });
 
   revalidatePath("/");
+  revalidatePath("/repos");
+  revalidatePath("/projects");
 }
 
 const planningStatuses = [
@@ -59,7 +62,7 @@ function requireGitHubToken() {
   const token = process.env.GITHUB_PAT;
 
   if (!token) {
-    throw new Error("GITHUB_PAT is required to create issues.");
+    throw new Error("GITHUB_PAT is required to access GitHub.");
   }
 
   return token;
@@ -282,6 +285,7 @@ export async function createPlanningIssue({
   }
 
   revalidatePath(`/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/planning`);
+  revalidatePath("/projects");
 
   return {
     number: issue.number,
@@ -320,4 +324,33 @@ export async function updateIssuePlanningStatus({
   });
 
   revalidatePath(`/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/planning`);
+  revalidatePath("/projects");
+}
+
+export async function syncRepositoryPlanningData({
+  owner,
+  repo
+}: {
+  owner: string;
+  repo: string;
+}) {
+  if (!owner || !repo) {
+    throw new Error("Repository owner and name are required.");
+  }
+
+  const token = requireGitHubToken();
+  const result = await syncRepositoryPlanningDataFromGitHub({
+    name: repo,
+    owner,
+    token
+  });
+
+  revalidatePath("/projects");
+  revalidatePath(`/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/planning`);
+
+  return {
+    issueCount: result.issueCount,
+    projectCount: result.projectCount,
+    syncedAt: result.syncedAt.toISOString()
+  };
 }
