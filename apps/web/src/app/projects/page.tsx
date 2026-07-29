@@ -1,6 +1,4 @@
-export default function Home() {
-  const appName = process.env.NEXT_PUBLIC_APP_NAME ?? "GitHub Project Management";
-
+export default function ProjectsPage() {
   return (
     <main className="min-h-screen bg-background">
       <section className="mx-[5%] flex min-h-screen max-w-none flex-col py-8">
@@ -8,7 +6,7 @@ export default function Home() {
           <div>
             <p className="text-sm font-medium text-muted-foreground">Project workspace</p>
             <h1 className="mt-1 text-3xl font-semibold tracking-normal text-foreground">
-              {appName}
+              Projects
             </h1>
           </div>
         </header>
