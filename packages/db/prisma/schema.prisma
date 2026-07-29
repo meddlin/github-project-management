@@ -49,6 +49,7 @@ model GitHubRepository {
   issueCount         Int
   openIssueCount     Int
   favorite           Boolean  @default(false)
+  favoriteOrder      Int?
   syncedAt           DateTime
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
@@ -57,6 +58,7 @@ model GitHubRepository {
 
   @@index([fullName])
   @@index([favorite, fullName])
+  @@index([favorite, favoriteOrder, fullName])
   @@index([owner])
   @@index([syncedAt])
 }

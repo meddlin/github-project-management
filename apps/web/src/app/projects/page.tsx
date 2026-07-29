@@ -6,6 +6,7 @@ import {
   PlanningKanbanBoard,
   type PlanningKanbanCard
 } from "../[owner]/[repo]/planning/planning-kanban-board";
+import { FavoriteRepositoryList } from "./favorite-repository-list";
 import { ProjectsAutoRefresh } from "./projects-auto-refresh";
 
 export const dynamic = "force-dynamic";
@@ -53,9 +54,17 @@ async function getProjectsData(): Promise<ProjectsData> {
     const [favoriteRepositories, latestSyncRun] = await Promise.all([
       prisma.gitHubRepository.findMany({
         ...favoriteRepositoryArgs,
-        orderBy: {
-          fullName: "asc"
-        },
+        orderBy: [
+          {
+            favoriteOrder: {
+              nulls: "last",
+              sort: "asc"
+            }
+          },
+          {
+            fullName: "asc"
+          }
+        ],
         where: {
           favorite: true
         }
@@ -87,10 +96,6 @@ function getSelectedRepositoryKey(value: string | string[] | undefined): string 
   }
 
   return value ?? null;
-}
-
-function buildProjectsHref(fullName: string) {
-  return `/projects?repo=${encodeURIComponent(fullName)}`;
 }
 
 function formatDate(value: Date | null): string {
@@ -216,38 +221,6 @@ function getProjectBoardCards(repository: FavoriteRepository) {
   return cards;
 }
 
-function RepositoryMenuItem({
-  isSelected,
-  repository
-}: {
-  isSelected: boolean;
-  repository: FavoriteRepository;
-}) {
-  return (
-    <Link
-      aria-current={isSelected ? "page" : undefined}
-      className={`block rounded-md border px-3 py-3 text-sm transition ${
-        isSelected
-          ? "border-primary bg-muted text-foreground"
-          : "border-transparent text-muted-foreground hover:border-border hover:bg-card hover:text-foreground"
-      }`}
-      href={buildProjectsHref(repository.fullName)}
-    >
-      <span className="block truncate font-medium">{repository.name}</span>
-      <span className="mt-1 block truncate text-xs">{repository.owner}</span>
-      <span className="mt-3 flex items-center justify-between gap-3 text-xs">
-        <span>
-          {repository.projects.length || repository.linkedProjectCount}{" "}
-          {(repository.projects.length || repository.linkedProjectCount) === 1
-            ? "project"
-            : "projects"}
-        </span>
-        <span>{repository.openIssueCount} open</span>
-      </span>
-    </Link>
-  );
-}
-
 function EmptyState({
   children,
   title
@@ -354,15 +327,18 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
                     {favoriteRepositories.length} available
                   </p>
                 </div>
-                <nav aria-label="Favorite repositories" className="flex flex-col gap-2 p-3">
-                  {favoriteRepositories.map((repository) => (
-                    <RepositoryMenuItem
-                      isSelected={repository.id === selectedRepository?.id}
-                      key={repository.id}
-                      repository={repository}
-                    />
-                  ))}
-                </nav>
+                <FavoriteRepositoryList
+                  repositories={favoriteRepositories.map((repository) => ({
+                    fullName: repository.fullName,
+                    id: repository.id,
+                    linkedProjectCount: repository.linkedProjectCount,
+                    name: repository.name,
+                    openIssueCount: repository.openIssueCount,
+                    owner: repository.owner,
+                    projectCount: repository.projects.length
+                  }))}
+                  selectedRepositoryId={selectedRepository?.id ?? null}
+                />
               </aside>
 
               <section className="min-w-0">

@@ -34,9 +34,14 @@ export async function setRepositoryFavorite(repositoryId: string, favorite: bool
   }
 
   await prisma.gitHubRepository.update({
-    data: {
-      favorite
-    },
+    data: favorite
+      ? {
+          favorite
+        }
+      : {
+          favorite,
+          favoriteOrder: null
+        },
     where: {
       id: repositoryId
     }
@@ -44,6 +49,49 @@ export async function setRepositoryFavorite(repositoryId: string, favorite: bool
 
   revalidatePath("/");
   revalidatePath("/repos");
+  revalidatePath("/projects");
+}
+
+export async function reorderFavoriteRepositories(repositoryIds: string[]) {
+  if (!Array.isArray(repositoryIds) || repositoryIds.length === 0) {
+    throw new Error("Repository ids are required.");
+  }
+
+  const uniqueRepositoryIds = [...new Set(repositoryIds)];
+
+  if (uniqueRepositoryIds.length !== repositoryIds.length) {
+    throw new Error("Repository ids must be unique.");
+  }
+
+  const favoriteRepositories = await prisma.gitHubRepository.findMany({
+    select: {
+      id: true
+    },
+    where: {
+      favorite: true,
+      id: {
+        in: repositoryIds
+      }
+    }
+  });
+
+  if (favoriteRepositories.length !== repositoryIds.length) {
+    throw new Error("All reordered repositories must be favorites.");
+  }
+
+  await prisma.$transaction(
+    repositoryIds.map((repositoryId, index) =>
+      prisma.gitHubRepository.update({
+        data: {
+          favoriteOrder: index
+        },
+        where: {
+          id: repositoryId
+        }
+      })
+    )
+  );
+
   revalidatePath("/projects");
 }
 
