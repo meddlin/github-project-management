@@ -24,6 +24,15 @@ docker compose up -d postgres
 pnpm db:generate
 ```
 
+## Upcoming: Commands to resync data
+
+```sh
+docker compose up -d postgres
+pnpm --filter @gpm/cli dev -- doctor
+pnpm --filter @gpm/cli dev -- repos sync
+pnpm --filter @gpm/cli dev -- projects import-statuses
+```
+
 ## Commands
 
 ```sh
@@ -36,6 +45,7 @@ pnpm db:generate
 pnpm --filter @gpm/cli dev -- --help
 pnpm --filter @gpm/cli dev -- doctor
 pnpm --filter @gpm/cli dev -- repos sync
+pnpm --filter @gpm/cli dev -- projects import-statuses
 ```
 
 ## Docker

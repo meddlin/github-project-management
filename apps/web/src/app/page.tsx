@@ -136,6 +136,7 @@ function serializeRepository(
     linkedProjectCount: repository.linkedProjectCount,
     name: repository.name,
     openIssueCount: repository.openIssueCount,
+    owner: repository.owner,
     pushedAt: repository.pushedAt?.toISOString() ?? null,
     syncedAt: repository.syncedAt?.toISOString() ?? null,
     url: repository.url,
