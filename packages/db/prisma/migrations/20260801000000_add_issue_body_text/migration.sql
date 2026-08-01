@@ -1,0 +1,1 @@
+ALTER TABLE "GitHubIssue" ADD COLUMN "bodyText" TEXT NOT NULL DEFAULT '';

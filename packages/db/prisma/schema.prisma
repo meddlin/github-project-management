@@ -71,6 +71,7 @@ model GitHubIssue {
   repository   GitHubRepository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
   number       Int
   title        String
+  bodyText     String           @default("")
   state        String
   url          String
   authorLogin  String?

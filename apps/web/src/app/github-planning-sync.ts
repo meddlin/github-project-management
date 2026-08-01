@@ -14,6 +14,7 @@ type GitHubIssueNode = {
   comments: { totalCount: number };
   createdAt: string;
   databaseId: number | null;
+  bodyText: string;
   id: string;
   labels: {
     nodes: Array<{ name: string } | null>;
@@ -218,6 +219,7 @@ const issuesQuery = `
           }
           createdAt
           databaseId
+          bodyText
           id
           labels(first: 20) {
             nodes {
@@ -717,6 +719,7 @@ export async function syncRepositoryPlanningDataFromGitHub({
       create: {
         assignees,
         authorLogin: issue.author?.login ?? null,
+        bodyText: issue.bodyText,
         closedAt: parseGitHubDate(issue.closedAt),
         commentCount: issue.comments.totalCount,
         createdAt: new Date(issue.createdAt),
@@ -737,6 +740,7 @@ export async function syncRepositoryPlanningDataFromGitHub({
       update: {
         assignees,
         authorLogin: issue.author?.login ?? null,
+        bodyText: issue.bodyText,
         closedAt: parseGitHubDate(issue.closedAt),
         commentCount: issue.comments.totalCount,
         githubId: issue.databaseId?.toString() ?? issue.id,
