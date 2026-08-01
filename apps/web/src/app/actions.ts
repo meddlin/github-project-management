@@ -10,6 +10,7 @@ type GitHubLabel = {
 
 type GitHubIssueResponse = {
   assignees?: Array<{ login?: string | null }> | null;
+  body?: string | null;
   closed_at?: string | null;
   comments?: number | null;
   created_at: string;
@@ -268,6 +269,7 @@ export async function createPlanningIssue({
         create: {
           assignees: issue.assignees?.map((assignee) => assignee.login ?? "").filter(Boolean) ?? [],
           authorLogin: issue.user?.login ?? null,
+          bodyText: issue.body ?? description.trim(),
           closedAt: issue.closed_at ? new Date(issue.closed_at) : null,
           commentCount: issue.comments ?? 0,
           createdAt: new Date(issue.created_at),
@@ -290,6 +292,7 @@ export async function createPlanningIssue({
         update: {
           assignees: issue.assignees?.map((assignee) => assignee.login ?? "").filter(Boolean) ?? [],
           authorLogin: issue.user?.login ?? null,
+          bodyText: issue.body ?? description.trim(),
           closedAt: issue.closed_at ? new Date(issue.closed_at) : null,
           commentCount: issue.comments ?? 0,
           labels: getGitHubIssueLabelNames(issue.labels),
@@ -365,6 +368,127 @@ export async function updateIssuePlanningStatus({
       planningStatus: status,
       planningStatusSource: "LOCAL",
       planningStatusUpdatedAt: new Date()
+    },
+    where: {
+      id: issueId
+    }
+  });
+
+  revalidatePath(`/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/planning`);
+  revalidatePath("/projects");
+}
+
+export async function updatePlanningIssue({
+  assignees,
+  description,
+  endDate,
+  issueId,
+  labels,
+  owner,
+  planningStatus,
+  repo,
+  startDate,
+  state,
+  title
+}: {
+  assignees: string[];
+  description: string;
+  endDate?: string | null;
+  issueId: string;
+  labels: string[];
+  owner: string;
+  planningStatus: PlanningStatusValue;
+  repo: string;
+  startDate?: string | null;
+  state: string;
+  title: string;
+}) {
+  const normalizedTitle = title.trim();
+  const normalizedState = state.toLowerCase();
+
+  if (!issueId) {
+    throw new Error("Issue id is required.");
+  }
+
+  if (!owner || !repo) {
+    throw new Error("Repository owner and name are required.");
+  }
+
+  if (!normalizedTitle) {
+    throw new Error("Issue title is required.");
+  }
+
+  if (normalizedState !== "open" && normalizedState !== "closed") {
+    throw new Error("Issue state must be open or closed.");
+  }
+
+  if (!planningStatuses.includes(planningStatus)) {
+    throw new Error("Invalid planning status.");
+  }
+
+  const planningStartDate = normalizeDateInput(startDate);
+  const planningEndDate = normalizeDateInput(endDate);
+  const selectedLabels = normalizeLabels(labels);
+  const selectedAssignees = normalizeLabels(assignees);
+  const repositoryIssue = await prisma.gitHubIssue.findFirst({
+    include: {
+      repository: true
+    },
+    where: {
+      id: issueId,
+      repository: {
+        name: repo,
+        owner
+      }
+    }
+  });
+
+  if (!repositoryIssue) {
+    throw new Error(`Issue was not found for ${owner}/${repo}.`);
+  }
+
+  const token = requireGitHubToken();
+  const response = await fetch(
+    `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(
+      repo
+    )}/issues/${repositoryIssue.number}`,
+    {
+      body: JSON.stringify({
+        assignees: selectedAssignees,
+        body: description,
+        labels: selectedLabels,
+        state: normalizedState,
+        title: normalizedTitle
+      }),
+      headers: buildGitHubHeaders(token),
+      method: "PATCH"
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Unable to update GitHub issue: ${await readGitHubError(response)}`);
+  }
+
+  const issue = (await response.json()) as GitHubIssueResponse;
+  const syncedAt = new Date();
+
+  await prisma.gitHubIssue.update({
+    data: {
+      assignees: issue.assignees?.map((assignee) => assignee.login ?? "").filter(Boolean) ?? [],
+      bodyText: issue.body ?? description,
+      closedAt: issue.closed_at ? new Date(issue.closed_at) : null,
+      commentCount: issue.comments ?? repositoryIssue.commentCount,
+      labels: getGitHubIssueLabelNames(issue.labels),
+      planningEndDate,
+      planningStartDate,
+      planningStatus,
+      planningStatusSource: "LOCAL",
+      planningStatusUpdatedAt: new Date(),
+      state: issue.state.toUpperCase(),
+      syncedAt,
+      title: issue.title,
+      updatedAt: new Date(issue.updated_at),
+      url: issue.html_url
     },
     where: {
       id: issueId

@@ -30,7 +30,7 @@ import {
 } from "../../../actions";
 import type { PlanningIssue } from "./planning-issue-split-view";
 
-export type PlanningKanbanCard = Omit<PlanningIssue, "number" | "url"> & {
+export type PlanningKanbanCard = Omit<PlanningIssue, "bodyText" | "number" | "url"> & {
   contentType?: "ISSUE" | "DRAFT_ISSUE";
   number: number | null;
   url: string | null;

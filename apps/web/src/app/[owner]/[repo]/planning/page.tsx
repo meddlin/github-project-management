@@ -76,6 +76,7 @@ function serializeIssue(issue: NonNullable<PlanningData["repository"]>["issues"]
   return {
     assignees: issue.assignees,
     authorLogin: issue.authorLogin,
+    bodyText: issue.bodyText,
     closedAt: issue.closedAt?.toISOString() ?? null,
     commentCount: issue.commentCount,
     createdAt: issue.createdAt.toISOString(),
@@ -230,7 +231,11 @@ export default async function PlanningPage({ params, searchParams }: PlanningPag
                   repo={decodedRepo}
                 />
               ) : (
-                <PlanningIssueSplitView issues={repository.issues.map(serializeIssue)} />
+                <PlanningIssueSplitView
+                  issues={repository.issues.map(serializeIssue)}
+                  owner={decodedOwner}
+                  repo={decodedRepo}
+                />
               )}
             </>
           ) : null}
