@@ -107,6 +107,64 @@ const planningStatuses = [
 
 export type PlanningStatusValue = (typeof planningStatuses)[number];
 
+type ProjectStatusOption = {
+  id: string;
+  name: string;
+};
+
+type GitHubGraphqlResponse<T> = {
+  data?: T;
+  errors?: Array<{ message: string }>;
+};
+
+const planningStatusNames = new Map<PlanningStatusValue, string>([
+  ["BACKLOG", "Backlog"],
+  ["READY", "Ready"],
+  ["IN_PROGRESS", "In progress"],
+  ["IN_REVIEW", "In review"],
+  ["DONE", "Done"]
+]);
+
+const updateProjectStatusMutation = `
+  mutation UpdateProjectStatus(
+    $fieldId: ID!
+    $itemId: ID!
+    $optionId: String!
+    $projectId: ID!
+  ) {
+    updateProjectV2ItemFieldValue(
+      input: {
+        fieldId: $fieldId
+        itemId: $itemId
+        projectId: $projectId
+        value: {
+          singleSelectOptionId: $optionId
+        }
+      }
+    ) {
+      projectV2Item {
+        id
+      }
+    }
+  }
+`;
+
+const clearProjectStatusMutation = `
+  mutation ClearProjectStatus($fieldId: ID!, $itemId: ID!, $projectId: ID!) {
+    clearProjectV2ItemFieldValue(
+      input: {
+        fieldId: $fieldId
+        itemId: $itemId
+        projectId: $projectId
+      }
+    ) {
+      projectV2Item {
+        id
+      }
+    }
+  }
+`;
+
 function requireGitHubToken() {
   const token = process.env.GITHUB_PAT;
 
@@ -143,6 +201,26 @@ function normalizeLabels(labels: string[]) {
   return [...new Set(labels.map((label) => label.trim()).filter(Boolean))];
 }
 
+function normalizeStatusName(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function parseProjectStatusOptions(value: unknown): ProjectStatusOption[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter((option): option is ProjectStatusOption => {
+    if (!option || typeof option !== "object") {
+      return false;
+    }
+
+    const candidate = option as Partial<ProjectStatusOption>;
+
+    return typeof candidate.id === "string" && typeof candidate.name === "string";
+  });
+}
+
 function getGitHubIssueLabelNames(labels: GitHubIssueResponse["labels"]) {
   if (!labels) {
     return [];
@@ -160,6 +238,45 @@ async function readGitHubError(response: Response) {
   } catch {
     return response.statusText;
   }
+}
+
+async function requestGitHubGraphql<T>({
+  query,
+  token,
+  variables
+}: {
+  query: string;
+  token: string;
+  variables: Record<string, unknown>;
+}): Promise<T> {
+  const response = await fetch("https://api.github.com/graphql", {
+    body: JSON.stringify({
+      query,
+      variables
+    }),
+    headers: buildGitHubHeaders(token),
+    method: "POST"
+  });
+
+  if (!response.ok) {
+    throw new Error(`Unable to update GitHub Project status: ${await readGitHubError(response)}`);
+  }
+
+  const payload = (await response.json()) as GitHubGraphqlResponse<T>;
+
+  if (payload.errors?.length) {
+    throw new Error(
+      `Unable to update GitHub Project status: ${payload.errors
+        .map((error) => error.message)
+        .join("; ")}`
+    );
+  }
+
+  if (!payload.data) {
+    throw new Error("Unable to update GitHub Project status: GitHub returned no data.");
+  }
+
+  return payload.data;
 }
 
 export async function getRepositoryLabels({ owner, repo }: { owner: string; repo: string }) {
@@ -363,16 +480,129 @@ export async function updateIssuePlanningStatus({
     throw new Error("Invalid planning status.");
   }
 
-  await prisma.gitHubIssue.update({
-    data: {
-      planningStatus: status,
-      planningStatusSource: "LOCAL",
-      planningStatusUpdatedAt: new Date()
+  if (!owner || !repo) {
+    throw new Error("Repository owner and name are required.");
+  }
+
+  const issue = await prisma.gitHubIssue.findFirst({
+    include: {
+      projectItems: {
+        include: {
+          project: true
+        }
+      },
+      repository: true
     },
     where: {
-      id: issueId
+      id: issueId,
+      repository: {
+        name: repo,
+        owner
+      }
     }
   });
+
+  if (!issue) {
+    throw new Error(`Issue was not found for ${owner}/${repo}.`);
+  }
+
+  const projectItem = [...issue.projectItems]
+    .filter((item) => item.contentType === "ISSUE")
+    .sort((left, right) => {
+      const leftTime = left.itemUpdatedAt?.getTime() ?? left.importedAt.getTime();
+      const rightTime = right.itemUpdatedAt?.getTime() ?? right.importedAt.getTime();
+
+      if (leftTime !== rightTime) {
+        return rightTime - leftTime;
+      }
+
+      const titleCompare = left.project.title.localeCompare(right.project.title);
+
+      if (titleCompare !== 0) {
+        return titleCompare;
+      }
+
+      return left.project.nodeId.localeCompare(right.project.nodeId);
+    })[0];
+
+  if (!projectItem) {
+    throw new Error(
+      "This issue is not linked to a GitHub Project item. Sync planning data and try again."
+    );
+  }
+
+  const { project } = projectItem;
+
+  if (!project.statusFieldNodeId) {
+    throw new Error(
+      `GitHub Project "${project.title}" does not have synced Status field metadata. Sync planning data and try again.`
+    );
+  }
+
+  const token = requireGitHubToken();
+  const updatedAt = new Date();
+  let statusOption: ProjectStatusOption | null = null;
+
+  if (status === "NO_STATUS") {
+    await requestGitHubGraphql({
+      query: clearProjectStatusMutation,
+      token,
+      variables: {
+        fieldId: project.statusFieldNodeId,
+        itemId: projectItem.nodeId,
+        projectId: project.nodeId
+      }
+    });
+  } else {
+    const statusName = planningStatusNames.get(status);
+    const statusOptions = parseProjectStatusOptions(project.statusOptions);
+
+    statusOption =
+      statusOptions.find(
+        (option) =>
+          statusName && normalizeStatusName(option.name) === normalizeStatusName(statusName)
+      ) ?? null;
+
+    if (!statusOption) {
+      throw new Error(
+        `GitHub Project "${project.title}" does not have a Status option for ${statusName}.`
+      );
+    }
+
+    await requestGitHubGraphql({
+      query: updateProjectStatusMutation,
+      token,
+      variables: {
+        fieldId: project.statusFieldNodeId,
+        itemId: projectItem.nodeId,
+        optionId: statusOption.id,
+        projectId: project.nodeId
+      }
+    });
+  }
+
+  await prisma.$transaction([
+    prisma.gitHubProjectItem.update({
+      data: {
+        importedStatusName: statusOption?.name ?? null,
+        importedStatusOption: statusOption?.id ?? null,
+        itemUpdatedAt: updatedAt
+      },
+      where: {
+        id: projectItem.id
+      }
+    }),
+    prisma.gitHubIssue.update({
+      data: {
+        planningStatus: status,
+        planningStatusSource: status === "NO_STATUS" ? "NONE" : "GITHUB_PROJECT",
+        planningStatusUpdatedAt: status === "NO_STATUS" ? null : updatedAt
+      },
+      where: {
+        id: issue.id
+      }
+    })
+  ]);
 
   revalidatePath(`/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/planning`);
   revalidatePath("/projects");

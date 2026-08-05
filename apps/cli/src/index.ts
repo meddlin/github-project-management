@@ -384,6 +384,13 @@ const projectStatusMap = new Map<string, PlanningStatusValue>([
   ["done", "DONE"]
 ]);
 
+function getStatusOptions(statusField: GitHubProjectFieldNode) {
+  return (statusField.options ?? []).map((option) => ({
+    id: option.id,
+    name: option.name
+  }));
+}
+
 function normalizeStatusName(value: string): string {
   return value.trim().toLowerCase();
 }
@@ -965,12 +972,16 @@ async function importProjectStatuses(): Promise<void> {
             importedAt,
             nodeId: project.id,
             owner: project.owner?.login ?? repository.owner,
+            statusFieldNodeId: statusField.id,
+            statusOptions: getStatusOptions(statusField),
             title: project.title,
             url: project.url
           },
           update: {
             importedAt,
             owner: project.owner?.login ?? repository.owner,
+            statusFieldNodeId: statusField.id,
+            statusOptions: getStatusOptions(statusField),
             title: project.title,
             url: project.url
           },
