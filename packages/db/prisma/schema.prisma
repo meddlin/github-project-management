@@ -99,16 +99,18 @@ model GitHubIssue {
 }
 
 model GitHubProject {
-  id             String   @id @default(cuid())
-  nodeId         String   @unique
-  title          String
-  owner          String
-  url            String
-  importedAt     DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  repositories   GitHubRepositoryProject[]
-  items          GitHubProjectItem[]
+  id                String   @id @default(cuid())
+  nodeId            String   @unique
+  title             String
+  owner             String
+  url               String
+  statusFieldNodeId String?
+  statusOptions     Json?
+  importedAt        DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  repositories      GitHubRepositoryProject[]
+  items             GitHubProjectItem[]
 
   @@index([owner, title])
   @@index([importedAt])

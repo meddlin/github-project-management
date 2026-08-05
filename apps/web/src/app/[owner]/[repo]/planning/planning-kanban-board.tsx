@@ -328,6 +328,7 @@ export function PlanningKanbanBoard({
 }) {
   const [localIssues, setLocalIssues] = useState(issues);
   const [activeIssueId, setActiveIssueId] = useState<string | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
   const [, startTransition] = useTransition();
 
   useEffect(() => {
@@ -390,9 +391,11 @@ export function PlanningKanbanBoard({
     const currentStatus = activeData?.status;
     const nextStatus = overData?.status;
 
-    if (!nextStatus || currentStatus === nextStatus) {
+    if (!currentStatus || !nextStatus || currentStatus === nextStatus) {
       return;
     }
+
+    setStatusError(null);
 
     setLocalIssues((currentIssues) =>
       currentIssues.map((issue) =>
@@ -412,6 +415,24 @@ export function PlanningKanbanBoard({
         owner,
         repo,
         status: nextStatus
+      }).catch((error: unknown) => {
+        setLocalIssues((currentIssues) =>
+          currentIssues.map((issue) =>
+            issue.id === issueId
+              ? {
+                  ...issue,
+                  planningStatus: currentStatus,
+                  planningStatusSource:
+                    draggedIssue?.planningStatusSource ?? issue.planningStatusSource
+                }
+              : issue
+          )
+        );
+        setStatusError(
+          error instanceof Error
+            ? error.message
+            : "Unable to update GitHub Project status. Sync planning data and try again."
+        );
       });
     });
   }
@@ -437,6 +458,11 @@ export function PlanningKanbanBoard({
       onDragStart={handleDragStart}
       sensors={sensors}
     >
+      {statusError ? (
+        <div className="mb-4 rounded-md border border-destructive-border bg-destructive px-4 py-3 text-sm text-destructive-foreground">
+          {statusError}
+        </div>
+      ) : null}
       <div className="overflow-x-auto pb-3">
         <div className="flex min-w-max gap-4">
           {columns.map((column) => (
