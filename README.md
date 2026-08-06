@@ -33,6 +33,15 @@ pnpm --filter @gpm/cli dev -- repos sync
 pnpm --filter @gpm/cli dev -- projects import-statuses
 ```
 
+After applying migrations that add new synced GitHub fields, run:
+
+```sh
+pnpm --filter @gpm/cli dev -- repos sync
+```
+
+Existing repositories show pull request data as not yet synced until this command populates
+`pullRequestsSyncedAt`.
+
 ## Commands
 
 ```sh

@@ -1,14 +1,42 @@
 import { CircleAlert } from "lucide-react";
+import loadDynamic from "next/dynamic";
 import Link from "next/link";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ActivityFeed, NeedsAttentionList, ProjectsGrid, StatTiles } from "./dashboard-overview";
-import { getDashboardViewModel } from "./dashboard-data";
+import { getDashboardViewModel, type DashboardView } from "./dashboard-data";
 import { DashboardSyncButton } from "./dashboard-sync-button";
 
 export const dynamic = "force-dynamic";
 
-export default async function DashboardPage() {
-  const { activityItems, attentionItems, error, greeting, projectCards, stats, syncStatusLabel } =
-    await getDashboardViewModel();
+const DashboardCalendar = loadDynamic(() =>
+  import("./dashboard-calendar").then((module) => module.DashboardCalendar)
+);
+
+type DashboardPageProps = {
+  searchParams: Promise<{
+    view?: string | string[];
+  }>;
+};
+
+function resolveDashboardView(view: string | string[] | undefined): DashboardView {
+  const value = Array.isArray(view) ? view[0] : view;
+
+  return value === "calendar" ? "calendar" : "overview";
+}
+
+export default async function DashboardPage({ searchParams }: DashboardPageProps) {
+  const resolvedSearchParams = await searchParams;
+  const activeView = resolveDashboardView(resolvedSearchParams.view);
+  const {
+    activityItems,
+    attentionItems,
+    calendarItems,
+    error,
+    greeting,
+    projectCards,
+    stats,
+    syncStatusLabel
+  } = await getDashboardViewModel(activeView);
   const hasFavorites = stats.favoriteProjectCount > 0;
 
   return (
@@ -21,7 +49,17 @@ export default async function DashboardPage() {
             </p>
             <h1 className="mt-2 text-3xl font-medium tracking-tight text-foreground">{greeting}</h1>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            <Tabs value={activeView}>
+              <TabsList aria-label="Dashboard view">
+                <TabsTrigger asChild value="overview">
+                  <Link href="/">Overview</Link>
+                </TabsTrigger>
+                <TabsTrigger asChild value="calendar">
+                  <Link href="/?view=calendar">Calendar</Link>
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
             <p className="text-sm text-muted-foreground">{syncStatusLabel}</p>
             <DashboardSyncButton disabled={!hasFavorites} />
           </div>
@@ -51,7 +89,11 @@ export default async function DashboardPage() {
             </div>
           ) : null}
 
-          {!error && hasFavorites ? (
+          {!error && hasFavorites && activeView === "calendar" ? (
+            <DashboardCalendar items={calendarItems} />
+          ) : null}
+
+          {!error && hasFavorites && activeView === "overview" ? (
             <>
               <StatTiles stats={stats} />
               <ProjectsGrid projectCards={projectCards} />
