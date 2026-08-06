@@ -1,6 +1,12 @@
 import type { Metadata } from "next";
+import { Inter } from "next/font/google";
 import { AppNavigation } from "./app-navigation";
 import "./globals.css";
+
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-inter"
+});
 
 export const metadata: Metadata = {
   description: "GitHub project management across repositories.",
@@ -22,7 +28,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html className={inter.variable} lang="en" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
