@@ -22,37 +22,30 @@ export function AppNavigation() {
   const pathname = usePathname();
 
   return (
-    <header className="border-b bg-background">
-      <div className="mx-[5%] flex items-center justify-between py-4">
-        <Link className="text-sm font-semibold text-foreground" href="/">
-          GitHub Project Management
+    <header className="border-b">
+      <div className="mx-[5%] flex items-center gap-4 py-3">
+        <Link className="mr-auto text-lg font-medium tracking-tight text-foreground" href="/">
+          GPM
         </Link>
-        <div className="flex items-center gap-2">
-          <nav
-            aria-label="Primary navigation"
-            className="flex items-center gap-1 rounded-md border bg-card p-1"
-          >
-            {navigationItems.map((item) => {
-              const isActive = item.match(pathname);
+        <nav aria-label="Primary navigation" className="flex items-center gap-4">
+          {navigationItems.map((item) => {
+            const isActive = item.match(pathname);
 
-              return (
-                <Link
-                  aria-current={isActive ? "page" : undefined}
-                  className={`rounded-md px-3 py-1.5 text-sm font-medium ${
-                    isActive
-                      ? "bg-foreground text-background"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                  }`}
-                  href={item.href}
-                  key={item.href}
-                >
-                  {item.label}
-                </Link>
-              );
-            })}
-          </nav>
-          <ThemeToggle />
-        </div>
+            return (
+              <Link
+                aria-current={isActive ? "page" : undefined}
+                className={`text-sm transition-colors ${
+                  isActive ? "text-primary" : "text-foreground hover:text-primary"
+                }`}
+                href={item.href}
+                key={item.href}
+              >
+                {item.label}
+              </Link>
+            );
+          })}
+        </nav>
+        <ThemeToggle />
       </div>
     </header>
   );

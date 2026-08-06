@@ -5,11 +5,19 @@
   --color-foreground: var(--foreground);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
   --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
   --color-success: var(--success);
   --color-success-foreground: var(--success-foreground);
   --color-success-border: var(--success-border);
@@ -23,20 +31,36 @@
   --color-overlay: var(--overlay);
   --font-sans: var(--font-sans-stack);
   --font-mono: var(--font-mono-stack);
+
+  /* Nocturne signature: tight, squared corners rather than Tailwind's default rounding. */
+  --radius-sm: 2px;
+  --radius-md: 3px;
+  --radius-lg: 4px;
+  --radius-xl: 6px;
+  --radius-2xl: 8px;
 }
 
 :root {
-  --font-sans-stack: Arial, Helvetica, sans-serif;
+  --font-sans-stack: var(--font-inter, "Inter"), system-ui, sans-serif;
   --font-mono-stack: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  --background: hsl(0 0% 100%);
-  --foreground: hsl(222.2 47.4% 11.2%);
-  --card: hsl(0 0% 100%);
-  --card-foreground: hsl(222.2 47.4% 11.2%);
-  --muted: hsl(210 40% 96.1%);
-  --muted-foreground: hsl(215.4 16.3% 46.9%);
-  --border: hsl(214.3 31.8% 91.4%);
-  --primary: hsl(221.2 83.2% 53.3%);
-  --primary-foreground: hsl(210 40% 98%);
+
+  --background: #ffffff;
+  --foreground: #1c1d29;
+  --card: #ffffff;
+  --card-foreground: #1c1d29;
+  --popover: #ffffff;
+  --popover-foreground: #1c1d29;
+  --muted: #f2f1f8;
+  --muted-foreground: #67697c;
+  --border: #e4e3ee;
+  --input: #d9d8e6;
+  --ring: #796cbf;
+  --primary: #796cbf;
+  --primary-foreground: #ffffff;
+  --secondary: #f2f1f8;
+  --secondary-foreground: #1c1d29;
+  --accent: #efedf9;
+  --accent-foreground: #1c1d29;
   --success: hsl(142.1 76.2% 96.3%);
   --success-foreground: hsl(142.8 64.2% 24.1%);
   --success-border: hsl(141.7 64.2% 85.1%);
@@ -51,15 +75,24 @@
 }
 
 .dark {
-  --background: hsl(222.2 47.4% 6.5%);
-  --foreground: hsl(210 40% 98%);
-  --card: hsl(222.2 47.4% 8.8%);
-  --card-foreground: hsl(210 40% 98%);
-  --muted: hsl(217.2 32.6% 17.5%);
-  --muted-foreground: hsl(215 20.2% 65.1%);
-  --border: hsl(217.2 32.6% 17.5%);
-  --primary: hsl(217.2 91.2% 59.8%);
-  --primary-foreground: hsl(222.2 47.4% 11.2%);
+  /* Nocturne palette — see design import at Repos.dc.html */
+  --background: #161826;
+  --foreground: #e9e9ed;
+  --card: #232532;
+  --card-foreground: #e9e9ed;
+  --popover: #232532;
+  --popover-foreground: #e9e9ed;
+  --muted: #262838;
+  --muted-foreground: #9397ab;
+  --border: color-mix(in srgb, #e9e9ed 16%, transparent);
+  --input: color-mix(in srgb, #e9e9ed 16%, transparent);
+  --ring: #9184d9;
+  --primary: #9184d9;
+  --primary-foreground: #2b2741;
+  --secondary: #2d3040;
+  --secondary-foreground: #e9e9ed;
+  --accent: #2a2c3c;
+  --accent-foreground: #e9e9ed;
   --success: hsl(143.8 61.2% 14.5%);
   --success-foreground: hsl(141.7 70.6% 73.3%);
   --success-border: hsl(142.4 71.8% 29.2%);
@@ -82,4 +115,18 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans-stack);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  letter-spacing: -0.015em;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--primary) 30%, transparent);
 }

@@ -97,27 +97,14 @@ function buildFilterHref({
   return query ? `/repos?${query}` : "/repos";
 }
 
-function FilterLink({
-  href,
-  isActive,
-  label
-}: {
-  href: string;
-  isActive: boolean;
-  label: string;
-}) {
-  return (
-    <Link
-      className={`rounded-md px-3 py-1.5 text-sm font-medium ${
-        isActive
-          ? "bg-foreground text-background"
-          : "text-muted-foreground hover:bg-muted hover:text-foreground"
-      }`}
-      href={href}
-    >
-      {label}
-    </Link>
-  );
+function buildSyncStatusLabel(latestSyncRun: RepositoryData["latestSyncRun"]): string {
+  if (!latestSyncRun) {
+    return "No sync has run yet";
+  }
+
+  const when = formatDate(latestSyncRun.finishedAt ?? latestSyncRun.startedAt);
+
+  return `${latestSyncRun.status} · ${latestSyncRun.repositoryCount} repos · ${when}`;
 }
 
 function serializeRepository(
@@ -167,70 +154,34 @@ export default async function ReposPage({ searchParams }: ReposProps) {
   return (
     <main className="min-h-screen bg-background">
       <section className="mx-[5%] flex min-h-screen max-w-none flex-col py-8">
-        <header className="flex items-center justify-between border-b pb-5">
+        <header className="flex flex-wrap items-end justify-between gap-4 border-b pb-6">
           <div>
-            <p className="text-sm font-medium text-muted-foreground">Repository inventory</p>
-            <h1 className="mt-1 text-3xl font-semibold tracking-normal text-foreground">Repos</h1>
+            <p className="text-[11px] font-medium uppercase tracking-[0.1em] text-primary">
+              Repository inventory
+            </p>
+            <h1 className="mt-2 text-3xl font-medium tracking-tight text-foreground">Repos</h1>
           </div>
-          <div className="rounded-md border px-3 py-2 text-sm font-medium text-muted-foreground">
-            {repositories.length} {hasActiveFilter ? "matching" : "repos"}
-          </div>
+          <p className="text-sm text-muted-foreground">
+            {buildSyncStatusLabel(latestSyncRun)}
+          </p>
         </header>
 
-        <div className="py-8">
+        <div className="flex flex-col gap-6 py-8">
           {error ? (
-            <div className="mb-4 rounded-md border border-destructive-border bg-destructive px-4 py-3 text-sm text-destructive-foreground">
+            <div className="flex items-center gap-2 rounded-md border border-destructive-border bg-destructive px-4 py-3 text-sm text-destructive-foreground">
+              <CircleAlert aria-hidden="true" className="h-4 w-4 shrink-0" />
               Unable to load repository inventory from Postgres. Check `DATABASE_URL` and ensure
               the Prisma migration has been applied.
             </div>
           ) : null}
 
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border bg-card px-4 py-3 text-sm">
-            <div className="flex items-center gap-2 font-medium text-card-foreground">
-              <CircleAlert aria-hidden="true" className="h-4 w-4 text-primary" />
-              Latest sync
-            </div>
-            <div className="text-muted-foreground">
-              {latestSyncRun
-                ? `${latestSyncRun.status} - ${latestSyncRun.repositoryCount} repos - ${formatDate(
-                    latestSyncRun.finishedAt ?? latestSyncRun.startedAt
-                  )}`
-                : "No sync has run yet"}
-            </div>
-          </div>
-
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <div className="inline-flex rounded-md border bg-card p-1">
-              <FilterLink href="/repos" isActive={!hasActiveFilter} label="All repos" />
-              <FilterLink
-                href={buildFilterHref({
-                  hasIssueFilter: !hasIssueFilter,
-                  hasProjectFilter
-                })}
-                isActive={hasIssueFilter}
-                label="Has issues"
-              />
-              <FilterLink
-                href={buildFilterHref({
-                  hasIssueFilter,
-                  hasProjectFilter: !hasProjectFilter
-                })}
-                isActive={hasProjectFilter}
-                label="Has projects"
-              />
-            </div>
-            <p className="text-sm text-muted-foreground">
-              Showing {repositories.length} of {totalRepositoryCount} synced repos
-            </p>
-          </div>
-
           {totalRepositoryCount === 0 ? (
             <div className="flex min-h-80 items-center justify-center rounded-md border border-dashed bg-card px-6 text-center">
               <div>
-                <h2 className="text-lg font-semibold text-card-foreground">No repositories synced</h2>
+                <h2 className="text-lg font-medium text-card-foreground">No repositories synced</h2>
                 <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
                   Run{" "}
-                  <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground">
+                  <code className="rounded-sm bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground">
                     pnpm --filter @gpm/cli dev -- repos sync
                   </code>{" "}
                   to load repositories visible to the configured GitHub PAT.
@@ -240,7 +191,7 @@ export default async function ReposPage({ searchParams }: ReposProps) {
           ) : repositories.length === 0 ? (
             <div className="flex min-h-80 items-center justify-center rounded-md border border-dashed bg-card px-6 text-center">
               <div>
-                <h2 className="text-lg font-semibold text-card-foreground">
+                <h2 className="text-lg font-medium text-card-foreground">
                   No repositories match this filter
                 </h2>
                 <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
@@ -255,7 +206,20 @@ export default async function ReposPage({ searchParams }: ReposProps) {
           ) : (
             <RepositoryInventory
               favoriteRepositories={favoriteRepositories}
+              filterAllHref="/repos"
+              filterIssuesHref={buildFilterHref({
+                hasIssueFilter: !hasIssueFilter,
+                hasProjectFilter
+              })}
+              filterProjectsHref={buildFilterHref({
+                hasIssueFilter,
+                hasProjectFilter: !hasProjectFilter
+              })}
+              hasActiveFilter={hasActiveFilter}
+              hasIssueFilter={hasIssueFilter}
+              hasProjectFilter={hasProjectFilter}
               otherRepositories={otherRepositories}
+              totalRepositoryCount={totalRepositoryCount}
             />
           )}
         </div>

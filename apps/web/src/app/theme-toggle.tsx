@@ -36,7 +36,7 @@ export function ThemeToggle() {
   return (
     <button
       aria-label={`Switch to ${nextTheme} mode`}
-      className="inline-flex h-9 w-9 items-center justify-center rounded-md border bg-card text-muted-foreground transition hover:bg-muted hover:text-foreground"
+      className="ml-2 inline-flex h-8 w-8 items-center justify-center rounded-md text-primary transition hover:bg-accent"
       onClick={() => {
         window.localStorage.setItem(storageKey, nextTheme);
         applyTheme(nextTheme);
