@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@gpm/db": "workspace:*",
-    "commander": "^14.0.0",
+    "commander": "^15.0.0",
     "dotenv": "^17.2.1"
   },
   "devDependencies": {
