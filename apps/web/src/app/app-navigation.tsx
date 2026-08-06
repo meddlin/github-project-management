@@ -6,6 +6,11 @@ import { ThemeToggle } from "./theme-toggle";
 
 const navigationItems = [
   {
+    href: "/",
+    label: "Overview",
+    match: (pathname: string) => pathname === "/"
+  },
+  {
     href: "/repos",
     label: "Repos",
     match: (pathname: string) =>
