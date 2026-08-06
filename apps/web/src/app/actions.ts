@@ -419,6 +419,7 @@ export async function createPlanningIssue({
   }
 
   revalidatePath(`/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/planning`);
+  revalidatePath("/repos");
   revalidatePath("/projects");
 
   return {
@@ -783,6 +784,7 @@ export async function syncRepositoryPlanningData({
   });
 
   revalidatePath("/projects");
+  revalidatePath("/repos");
   revalidatePath(`/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/planning`);
 
   return {
@@ -819,6 +821,7 @@ export async function syncAllFavoritesPlanningData() {
 
   revalidatePath("/");
   revalidatePath("/projects");
+  revalidatePath("/repos");
 
   for (const favorite of favorites) {
     revalidatePath(

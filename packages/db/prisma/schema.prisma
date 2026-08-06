@@ -20,32 +20,38 @@ enum GitHubProjectItemContentType {
 }
 
 model GitHubRepository {
-  id                 String   @id @default(cuid())
-  githubId           String   @unique
-  nodeId             String   @unique
-  owner              String
-  name               String
-  fullName           String   @unique
-  url                String
-  visibility         String
-  isPrivate          Boolean
-  isFork             Boolean
-  isArchived         Boolean
-  defaultBranch      String?
-  pushedAt           DateTime?
-  githubUpdatedAt    DateTime?
-  hasLinkedProject   Boolean
-  linkedProjectCount Int
-  hasIssuesCreated   Boolean
-  issueCount         Int
-  openIssueCount     Int
-  favorite           Boolean  @default(false)
-  favoriteOrder      Int?
-  syncedAt           DateTime
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
-  issues             GitHubIssue[]
-  projects           GitHubRepositoryProject[]
+  id                   String                    @id @default(cuid())
+  githubId             String                    @unique
+  nodeId               String                    @unique
+  owner                String
+  name                 String
+  fullName             String                    @unique
+  url                  String
+  visibility           String
+  isPrivate            Boolean
+  isFork               Boolean
+  isArchived           Boolean
+  defaultBranch        String?
+  primaryLanguageName  String?
+  primaryLanguageColor String?
+  pushedAt             DateTime?
+  githubUpdatedAt      DateTime?
+  hasLinkedProject     Boolean
+  linkedProjectCount   Int
+  hasIssuesCreated     Boolean
+  issueCount           Int
+  openIssueCount       Int
+  pullRequestCount     Int                       @default(0)
+  openPullRequestCount Int                       @default(0)
+  pullRequestsSyncedAt DateTime?
+  favorite             Boolean                   @default(false)
+  favoriteOrder        Int?
+  syncedAt             DateTime
+  createdAt            DateTime                  @default(now())
+  updatedAt            DateTime                  @updatedAt
+  issues               GitHubIssue[]
+  pullRequests         GitHubPullRequest[]
+  projects             GitHubRepositoryProject[]
 
   @@index([fullName])
   @@index([favorite, fullName])
@@ -54,7 +60,7 @@ model GitHubRepository {
   @@index([syncedAt])
 }
 
-model GitHubIssue {
+model GitHubPullRequest {
   id           String           @id @default(cuid())
   githubId     String
   nodeId       String
@@ -62,17 +68,42 @@ model GitHubIssue {
   repository   GitHubRepository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
   number       Int
   title        String
-  bodyText     String           @default("")
   state        String
   url          String
   authorLogin  String?
-  labels       String[]
-  assignees    String[]
+  isDraft      Boolean
   commentCount Int
   createdAt    DateTime
   updatedAt    DateTime
-  closedAt     DateTime?
   syncedAt     DateTime
+
+  @@unique([repositoryId, number])
+  @@unique([repositoryId, githubId])
+  @@unique([nodeId])
+  @@index([repositoryId, state, updatedAt])
+  @@index([repositoryId, updatedAt])
+  @@index([syncedAt])
+}
+
+model GitHubIssue {
+  id                      String               @id @default(cuid())
+  githubId                String
+  nodeId                  String
+  repositoryId            String
+  repository              GitHubRepository     @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  number                  Int
+  title                   String
+  bodyText                String               @default("")
+  state                   String
+  url                     String
+  authorLogin             String?
+  labels                  String[]
+  assignees               String[]
+  commentCount            Int
+  createdAt               DateTime
+  updatedAt               DateTime
+  closedAt                DateTime?
+  syncedAt                DateTime
   planningStatus          String?
   planningStatusSource    PlanningStatusSource @default(NONE)
   planningStatusUpdatedAt DateTime?
@@ -90,16 +121,16 @@ model GitHubIssue {
 }
 
 model GitHubProject {
-  id                String   @id @default(cuid())
-  nodeId            String   @unique
+  id                String                    @id @default(cuid())
+  nodeId            String                    @unique
   title             String
   owner             String
   url               String
   statusFieldNodeId String?
   statusOptions     Json?
   importedAt        DateTime?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
   repositories      GitHubRepositoryProject[]
   items             GitHubProjectItem[]
 

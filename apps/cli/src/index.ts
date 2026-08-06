@@ -3,6 +3,7 @@ import { Command } from "commander";
 import { config } from "dotenv";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
+import { requestGitHubGraphql } from "@gpm/db";
 
 const envFile = process.env.GPM_ENV_FILE
   ? process.env.GPM_ENV_FILE
@@ -31,9 +32,12 @@ type GitHubRepositoryNode = {
   issues: { totalCount: number };
   name: string;
   nameWithOwner: string;
+  openPullRequests: { totalCount: number };
   openIssues: { totalCount: number };
   owner: { login: string };
+  primaryLanguage: { color: string | null; name: string } | null;
   projectsV2: { totalCount: number };
+  pullRequests: { totalCount: number };
   pushedAt: string | null;
   updatedAt: string | null;
   url: string;
@@ -54,6 +58,20 @@ type GitHubIssueNode = {
   labels: {
     nodes: Array<{ name: string } | null>;
   };
+  number: number;
+  state: string;
+  title: string;
+  updatedAt: string;
+  url: string;
+};
+
+type GitHubPullRequestNode = {
+  author: { login: string } | null;
+  comments: { totalCount: number };
+  createdAt: string;
+  databaseId: number | null;
+  id: string;
+  isDraft: boolean;
   number: number;
   state: string;
   title: string;
@@ -141,6 +159,34 @@ type GitHubIssuesResponse = {
   errors?: Array<{ message: string }>;
 };
 
+type GitHubIssuesConnection = NonNullable<
+  NonNullable<GitHubIssuesResponse["data"]>["repository"]
+>["issues"];
+type GitHubRepositoriesConnection = NonNullable<
+  GitHubRepositoriesResponse["data"]
+>["viewer"]["repositories"];
+type GitHubPullRequestsConnection = NonNullable<
+  NonNullable<GitHubPullRequestsResponse["data"]>["repository"]
+>["pullRequests"];
+type GitHubRepositoryProjectsConnection = NonNullable<
+  NonNullable<GitHubRepositoryProjectsResponse["data"]>["repository"]
+>["projectsV2"];
+type GitHubProjectItemsConnection = NonNullable<
+  NonNullable<GitHubProjectItemsResponse["data"]>["node"]
+>["items"];
+
+type GitHubPullRequestsResponse = {
+  data?: {
+    repository: {
+      pullRequests: {
+        nodes: Array<GitHubPullRequestNode | null>;
+        pageInfo: GitHubPageInfo;
+      };
+    } | null;
+  };
+  errors?: Array<{ message: string }>;
+};
+
 type GitHubRepositoryProjectsResponse = {
   data?: {
     repository: {
@@ -191,16 +237,61 @@ const repositoriesQuery = `
           openIssues: issues(first: 1, states: OPEN) {
             totalCount
           }
+          openPullRequests: pullRequests(first: 1, states: OPEN) {
+            totalCount
+          }
           owner {
             login
           }
+          primaryLanguage {
+            color
+            name
+          }
           projectsV2(first: 1) {
+            totalCount
+          }
+          pullRequests(first: 1) {
             totalCount
           }
           pushedAt
           updatedAt
           url
           visibility
+        }
+        pageInfo {
+          endCursor
+          hasNextPage
+        }
+      }
+    }
+  }
+`;
+
+const pullRequestsQuery = `
+  query PullRequests($owner: String!, $name: String!, $after: String) {
+    repository(owner: $owner, name: $name) {
+      pullRequests(
+        first: 100
+        after: $after
+        states: OPEN
+        orderBy: { field: UPDATED_AT, direction: DESC }
+      ) {
+        nodes {
+          author {
+            login
+          }
+          comments {
+            totalCount
+          }
+          createdAt
+          databaseId
+          id
+          isDraft
+          number
+          state
+          title
+          updatedAt
+          url
         }
         pageInfo {
           endCursor
@@ -442,31 +533,14 @@ async function fetchGitHubRepositories(token: string): Promise<GitHubRepositoryN
   let after: string | null = null;
 
   do {
-    const response = await fetch("https://api.github.com/graphql", {
-      body: JSON.stringify({
-        query: repositoriesQuery,
-        variables: { after }
-      }),
-      headers: {
-        Accept: "application/vnd.github+json",
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-        "User-Agent": "github-project-management"
-      },
-      method: "POST"
+    const payload: GitHubRepositoriesResponse = await requestGitHubGraphql<GitHubRepositoriesResponse>({
+      query: repositoriesQuery,
+      requestName: "repositories",
+      token,
+      variables: { after }
     });
 
-    if (!response.ok) {
-      throw new Error(`GitHub GraphQL request failed: ${response.status} ${response.statusText}`);
-    }
-
-    const payload = (await response.json()) as GitHubRepositoriesResponse;
-
-    if (payload.errors?.length) {
-      throw new Error(payload.errors.map((error) => error.message).join("; "));
-    }
-
-    const connection = payload.data?.viewer.repositories;
+    const connection: GitHubRepositoriesConnection | undefined = payload.data?.viewer.repositories;
 
     if (!connection) {
       throw new Error("GitHub GraphQL response did not include repositories.");
@@ -494,33 +568,14 @@ async function fetchGitHubIssues({
   let after: string | null = null;
 
   do {
-    const response = await fetch("https://api.github.com/graphql", {
-      body: JSON.stringify({
-        query: issuesQuery,
-        variables: { after, name, owner }
-      }),
-      headers: {
-        Accept: "application/vnd.github+json",
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-        "User-Agent": "github-project-management"
-      },
-      method: "POST"
+    const payload: GitHubIssuesResponse = await requestGitHubGraphql<GitHubIssuesResponse>({
+      query: issuesQuery,
+      requestName: `issues:${owner}/${name}`,
+      token,
+      variables: { after, name, owner }
     });
 
-    if (!response.ok) {
-      throw new Error(
-        `GitHub issues GraphQL request failed for ${owner}/${name}: ${response.status} ${response.statusText}`
-      );
-    }
-
-    const payload = (await response.json()) as GitHubIssuesResponse;
-
-    if (payload.errors?.length) {
-      throw new Error(payload.errors.map((error) => error.message).join("; "));
-    }
-
-    const connection = payload.data?.repository?.issues;
+    const connection: GitHubIssuesConnection | undefined = payload.data?.repository?.issues;
 
     if (!connection) {
       throw new Error(`GitHub GraphQL response did not include issues for ${owner}/${name}.`);
@@ -531,6 +586,42 @@ async function fetchGitHubIssues({
   } while (after);
 
   return issues;
+}
+
+async function fetchGitHubPullRequests({
+  name,
+  owner,
+  token
+}: {
+  name: string;
+  owner: string;
+  token: string;
+}): Promise<GitHubPullRequestNode[]> {
+  const pullRequests: GitHubPullRequestNode[] = [];
+  let after: string | null = null;
+
+  do {
+    const payload: GitHubPullRequestsResponse =
+      await requestGitHubGraphql<GitHubPullRequestsResponse>({
+      query: pullRequestsQuery,
+      requestName: `pullRequests:${owner}/${name}`,
+      token,
+      variables: { after, name, owner }
+    });
+    const connection: GitHubPullRequestsConnection | undefined =
+      payload.data?.repository?.pullRequests;
+
+    if (!connection) {
+      throw new Error(`GitHub GraphQL response did not include pull requests for ${owner}/${name}.`);
+    }
+
+    pullRequests.push(
+      ...connection.nodes.filter((node): node is GitHubPullRequestNode => node !== null)
+    );
+    after = connection.pageInfo.hasNextPage ? connection.pageInfo.endCursor : null;
+  } while (after);
+
+  return pullRequests;
 }
 
 async function fetchGitHubRepositoryProjects({
@@ -546,33 +637,16 @@ async function fetchGitHubRepositoryProjects({
   let after: string | null = null;
 
   do {
-    const response = await fetch("https://api.github.com/graphql", {
-      body: JSON.stringify({
-        query: repositoryProjectsQuery,
-        variables: { after, name, owner }
-      }),
-      headers: {
-        Accept: "application/vnd.github+json",
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-        "User-Agent": "github-project-management"
-      },
-      method: "POST"
+    const payload: GitHubRepositoryProjectsResponse =
+      await requestGitHubGraphql<GitHubRepositoryProjectsResponse>({
+      query: repositoryProjectsQuery,
+      requestName: `projects:${owner}/${name}`,
+      token,
+      variables: { after, name, owner }
     });
 
-    if (!response.ok) {
-      throw new Error(
-        `GitHub projects GraphQL request failed for ${owner}/${name}: ${response.status} ${response.statusText}`
-      );
-    }
-
-    const payload = (await response.json()) as GitHubRepositoryProjectsResponse;
-
-    if (payload.errors?.length) {
-      throw new Error(payload.errors.map((error) => error.message).join("; "));
-    }
-
-    const connection = payload.data?.repository?.projectsV2;
+    const connection: GitHubRepositoryProjectsConnection | undefined =
+      payload.data?.repository?.projectsV2;
 
     if (!connection) {
       throw new Error(`GitHub GraphQL response did not include projects for ${owner}/${name}.`);
@@ -596,33 +670,15 @@ async function fetchGitHubProjectItems({
   let after: string | null = null;
 
   do {
-    const response = await fetch("https://api.github.com/graphql", {
-      body: JSON.stringify({
-        query: projectItemsQuery,
-        variables: { after, projectId }
-      }),
-      headers: {
-        Accept: "application/vnd.github+json",
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-        "User-Agent": "github-project-management"
-      },
-      method: "POST"
+    const payload: GitHubProjectItemsResponse =
+      await requestGitHubGraphql<GitHubProjectItemsResponse>({
+      query: projectItemsQuery,
+      requestName: `projectItems:${projectId}`,
+      token,
+      variables: { after, projectId }
     });
 
-    if (!response.ok) {
-      throw new Error(
-        `GitHub project items GraphQL request failed for ${projectId}: ${response.status} ${response.statusText}`
-      );
-    }
-
-    const payload = (await response.json()) as GitHubProjectItemsResponse;
-
-    if (payload.errors?.length) {
-      throw new Error(payload.errors.map((error) => error.message).join("; "));
-    }
-
-    const connection = payload.data?.node?.items;
+    const connection: GitHubProjectItemsConnection | undefined = payload.data?.node?.items;
 
     if (!connection) {
       throw new Error(`GitHub GraphQL response did not include project items for ${projectId}.`);
@@ -663,6 +719,8 @@ async function syncRepositories(): Promise<void> {
       const githubId = repository.databaseId?.toString() ?? repository.id;
       const linkedProjectCount = repository.projectsV2.totalCount;
       const issueCount = repository.issues.totalCount;
+      const pullRequestCount = repository.pullRequests.totalCount;
+      const openPullRequestCount = repository.openPullRequests.totalCount;
 
       const persistedRepository = await prisma.gitHubRepository.upsert({
         create: {
@@ -680,7 +738,12 @@ async function syncRepositories(): Promise<void> {
           name: repository.name,
           nodeId: repository.id,
           openIssueCount: repository.openIssues.totalCount,
+          openPullRequestCount,
           owner: repository.owner.login,
+          primaryLanguageColor: repository.primaryLanguage?.color ?? null,
+          primaryLanguageName: repository.primaryLanguage?.name ?? null,
+          pullRequestCount,
+          pullRequestsSyncedAt: syncedAt,
           pushedAt: parseGitHubDate(repository.pushedAt),
           syncedAt,
           url: repository.url,
@@ -700,7 +763,12 @@ async function syncRepositories(): Promise<void> {
           name: repository.name,
           nodeId: repository.id,
           openIssueCount: repository.openIssues.totalCount,
+          openPullRequestCount,
           owner: repository.owner.login,
+          primaryLanguageColor: repository.primaryLanguage?.color ?? null,
+          primaryLanguageName: repository.primaryLanguage?.name ?? null,
+          pullRequestCount,
+          pullRequestsSyncedAt: syncedAt,
           pushedAt: parseGitHubDate(repository.pushedAt),
           syncedAt,
           url: repository.url,
@@ -798,6 +866,62 @@ async function syncRepositories(): Promise<void> {
         where: {
           repositoryId: persistedRepository.id,
           ...(syncedIssueNodeIds.length > 0 ? { nodeId: { notIn: syncedIssueNodeIds } } : {})
+        }
+      });
+
+      const pullRequests = await fetchGitHubPullRequests({
+        name: repository.name,
+        owner: repository.owner.login,
+        token
+      });
+      const syncedPullRequestNodeIds: string[] = [];
+
+      for (const pullRequest of pullRequests) {
+        syncedPullRequestNodeIds.push(pullRequest.id);
+
+        await prisma.gitHubPullRequest.upsert({
+          create: {
+            authorLogin: pullRequest.author?.login ?? null,
+            commentCount: pullRequest.comments.totalCount,
+            createdAt: new Date(pullRequest.createdAt),
+            githubId: pullRequest.databaseId?.toString() ?? pullRequest.id,
+            isDraft: pullRequest.isDraft,
+            nodeId: pullRequest.id,
+            number: pullRequest.number,
+            repositoryId: persistedRepository.id,
+            state: pullRequest.state,
+            syncedAt,
+            title: pullRequest.title,
+            updatedAt: new Date(pullRequest.updatedAt),
+            url: pullRequest.url
+          },
+          update: {
+            authorLogin: pullRequest.author?.login ?? null,
+            commentCount: pullRequest.comments.totalCount,
+            githubId: pullRequest.databaseId?.toString() ?? pullRequest.id,
+            isDraft: pullRequest.isDraft,
+            number: pullRequest.number,
+            state: pullRequest.state,
+            syncedAt,
+            title: pullRequest.title,
+            updatedAt: new Date(pullRequest.updatedAt),
+            url: pullRequest.url
+          },
+          where: {
+            repositoryId_number: {
+              number: pullRequest.number,
+              repositoryId: persistedRepository.id
+            }
+          }
+        });
+      }
+
+      await prisma.gitHubPullRequest.deleteMany({
+        where: {
+          repositoryId: persistedRepository.id,
+          ...(syncedPullRequestNodeIds.length > 0
+            ? { nodeId: { notIn: syncedPullRequestNodeIds } }
+            : {})
         }
       });
     }

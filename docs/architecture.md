@@ -68,8 +68,9 @@ The shared TypeScript configuration package provides base, Node, and Next.js Typ
 
 Postgres is the system of record for synced and locally managed planning data. The Prisma schema models include:
 
-- `GitHubRepository`: repository inventory, metadata, favorite state, issue counts, project counts, and sync timestamps.
+- `GitHubRepository`: repository inventory, metadata, language, favorite state, issue counts, pull request counts, project counts, and sync timestamps. `pullRequestsSyncedAt` distinguishes missing post-migration PR data from a true zero count.
 - `GitHubIssue`: synced GitHub issues plus local planning status, planning status source, planning dates, labels, assignees, and issue body text.
+- `GitHubPullRequest`: synced open GitHub pull requests for the repository details sheet.
 - `GitHubProject`: imported GitHub Projects v2 metadata.
 - `GitHubRepositoryProject`: join table between repositories and imported projects.
 - `GitHubProjectItem`: imported project items for issues and draft issues, including imported project status fields.
