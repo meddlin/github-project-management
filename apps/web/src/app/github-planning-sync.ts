@@ -1,4 +1,5 @@
 import { prisma } from "@gpm/db";
+import { pickPrimaryProjectItem } from "./planning-project";
 
 type GitHubPageInfo = {
   endCursor: string | null;
@@ -153,14 +154,6 @@ type GitHubRepositoryProjectsConnection = NonNullable<
 type GitHubProjectItemsConnection = NonNullable<
   NonNullable<GitHubProjectItemsResponse["data"]>["node"]
 >["items"];
-
-type PlanningStatusValue =
-  | "NO_STATUS"
-  | "BACKLOG"
-  | "READY"
-  | "IN_PROGRESS"
-  | "IN_REVIEW"
-  | "DONE";
 
 const repositoryQuery = `
   query Repository($owner: String!, $name: String!) {
@@ -340,24 +333,16 @@ const projectItemsQuery = `
   }
 `;
 
-const labelStatusMap = new Map<string, PlanningStatusValue>([
-  ["backlog", "BACKLOG"],
-  ["ready", "READY"],
-  ["in progress", "IN_PROGRESS"],
-  ["in-progress", "IN_PROGRESS"],
-  ["in_progress", "IN_PROGRESS"],
-  ["in review", "IN_REVIEW"],
-  ["in-review", "IN_REVIEW"],
-  ["in_review", "IN_REVIEW"],
-  ["done", "DONE"]
-]);
-
-const projectStatusMap = new Map<string, PlanningStatusValue>([
-  ["backlog", "BACKLOG"],
-  ["ready", "READY"],
-  ["in progress", "IN_PROGRESS"],
-  ["in review", "IN_REVIEW"],
-  ["done", "DONE"]
+const labelStatusMap = new Map<string, string>([
+  ["backlog", "Backlog"],
+  ["ready", "Ready"],
+  ["in progress", "In progress"],
+  ["in-progress", "In progress"],
+  ["in_progress", "In progress"],
+  ["in review", "In review"],
+  ["in-review", "In review"],
+  ["in_review", "In review"],
+  ["done", "Done"]
 ]);
 
 function getStatusOptions(statusField: GitHubProjectFieldNode) {
@@ -371,7 +356,7 @@ function normalizeStatusName(value: string): string {
   return value.trim().toLowerCase();
 }
 
-function mapLabelsToPlanningStatus(labels: string[]): PlanningStatusValue {
+function mapLabelsToPlanningStatus(labels: string[]): string | null {
   for (const label of labels) {
     const status = labelStatusMap.get(normalizeStatusName(label));
 
@@ -380,11 +365,7 @@ function mapLabelsToPlanningStatus(labels: string[]): PlanningStatusValue {
     }
   }
 
-  return "NO_STATUS";
-}
-
-function mapProjectStatus(value: string | null | undefined): PlanningStatusValue {
-  return value ? projectStatusMap.get(normalizeStatusName(value)) ?? "NO_STATUS" : "NO_STATUS";
+  return null;
 }
 
 function parseGitHubDate(value: string | null): Date | null {
@@ -599,34 +580,19 @@ async function applyImportedProjectStatus(issueId: string): Promise<void> {
     return;
   }
 
-  const bestItem = [...issue.projectItems].sort((left, right) => {
-    const leftTime = left.itemUpdatedAt?.getTime() ?? left.importedAt.getTime();
-    const rightTime = right.itemUpdatedAt?.getTime() ?? right.importedAt.getTime();
-
-    if (leftTime !== rightTime) {
-      return rightTime - leftTime;
-    }
-
-    const titleCompare = left.project.title.localeCompare(right.project.title);
-
-    if (titleCompare !== 0) {
-      return titleCompare;
-    }
-
-    return left.project.nodeId.localeCompare(right.project.nodeId);
-  })[0];
+  const bestItem = pickPrimaryProjectItem(issue.projectItems);
 
   if (!bestItem) {
     return;
   }
 
-  const planningStatus = mapProjectStatus(bestItem.importedStatusName);
+  const planningStatus = bestItem.importedStatusName?.trim() || null;
 
   await prisma.gitHubIssue.update({
     data: {
       planningStatus,
-      planningStatusSource: planningStatus === "NO_STATUS" ? "NONE" : "GITHUB_PROJECT",
-      planningStatusUpdatedAt: planningStatus === "NO_STATUS" ? null : bestItem.importedAt
+      planningStatusSource: planningStatus === null ? "NONE" : "GITHUB_PROJECT",
+      planningStatusUpdatedAt: planningStatus === null ? null : bestItem.importedAt
     },
     where: {
       id: issue.id
@@ -721,7 +687,7 @@ export async function syncRepositoryPlanningDataFromGitHub({
       .filter((assignee): assignee is { login: string } => assignee !== null)
       .map((assignee) => assignee.login);
     const labelPlanningStatus = mapLabelsToPlanningStatus(labels);
-    const labelPlanningStatusSource = labelPlanningStatus === "NO_STATUS" ? "NONE" : "GITHUB_LABEL";
+    const labelPlanningStatusSource = labelPlanningStatus === null ? "NONE" : "GITHUB_LABEL";
     const persistedIssue = await prisma.gitHubIssue.upsert({
       create: {
         assignees,
@@ -736,7 +702,7 @@ export async function syncRepositoryPlanningDataFromGitHub({
         number: issue.number,
         planningStatus: labelPlanningStatus,
         planningStatusSource: labelPlanningStatusSource,
-        planningStatusUpdatedAt: labelPlanningStatus === "NO_STATUS" ? null : syncedAt,
+        planningStatusUpdatedAt: labelPlanningStatus === null ? null : syncedAt,
         repositoryId: persistedRepository.id,
         state: issue.state,
         syncedAt,
@@ -775,7 +741,7 @@ export async function syncRepositoryPlanningDataFromGitHub({
         data: {
           planningStatus: labelPlanningStatus,
           planningStatusSource: labelPlanningStatusSource,
-          planningStatusUpdatedAt: labelPlanningStatus === "NO_STATUS" ? null : syncedAt
+          planningStatusUpdatedAt: labelPlanningStatus === null ? null : syncedAt
         },
         where: {
           id: persistedIssue.id

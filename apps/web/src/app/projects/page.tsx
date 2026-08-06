@@ -6,6 +6,10 @@ import {
   PlanningKanbanBoard,
   type PlanningKanbanCard
 } from "../[owner]/[repo]/planning/planning-kanban-board";
+import {
+  parseProjectStatusOptions,
+  type PlanningStatusMode
+} from "../planning-project";
 import { FavoriteRepositoryList } from "./favorite-repository-list";
 import { ProjectsAutoRefresh } from "./projects-auto-refresh";
 
@@ -113,24 +117,44 @@ function formatDateOnly(value: Date | null): string | null {
   return value ? value.toISOString().slice(0, 10) : null;
 }
 
-function mapProjectStatus(value: string | null): PlanningKanbanCard["planningStatus"] {
-  switch (value?.trim().toLowerCase()) {
-    case "backlog":
-      return "BACKLOG";
-    case "ready":
-      return "READY";
-    case "in progress":
-      return "IN_PROGRESS";
-    case "in review":
-      return "IN_REVIEW";
-    case "done":
-      return "DONE";
-    default:
-      return "NO_STATUS";
+type ProjectItem = FavoriteRepository["projects"][number]["project"]["items"][number];
+
+function pickPrimaryProject(
+  repository: FavoriteRepository
+): FavoriteRepository["projects"][number]["project"] | null {
+  if (repository.projects.length === 0) {
+    return null;
   }
+
+  const sortedLinks = [...repository.projects].sort((left, right) => {
+    const leftCount = left.project.items.length;
+    const rightCount = right.project.items.length;
+
+    if (leftCount !== rightCount) {
+      return rightCount - leftCount;
+    }
+
+    return left.importedAt.getTime() - right.importedAt.getTime();
+  });
+
+  return sortedLinks[0]?.project ?? null;
 }
 
-type ProjectItem = FavoriteRepository["projects"][number]["project"]["items"][number];
+function resolveStatusMode(
+  project: FavoriteRepository["projects"][number]["project"] | null
+): PlanningStatusMode {
+  if (!project?.statusFieldNodeId) {
+    return { mode: "local" };
+  }
+
+  const statusOptions = parseProjectStatusOptions(project.statusOptions);
+
+  if (statusOptions.length === 0) {
+    return { mode: "local" };
+  }
+
+  return { mode: "project", statusOptions };
+}
 
 function serializeIssueCard(item: ProjectItem): PlanningKanbanCard | null {
   const issue = item.issue;
@@ -151,6 +175,7 @@ function serializeIssueCard(item: ProjectItem): PlanningKanbanCard | null {
     planningEndDate: formatDateOnly(issue.planningEndDate),
     planningStartDate: formatDateOnly(issue.planningStartDate),
     planningStatus: issue.planningStatus,
+    planningStatusOptionId: item.importedStatusOption,
     planningStatusSource: issue.planningStatusSource,
     state: issue.state,
     title: issue.title,
@@ -177,7 +202,8 @@ function serializeDraftCard(item: ProjectItem): PlanningKanbanCard | null {
     number: null,
     planningEndDate: null,
     planningStartDate: null,
-    planningStatus: mapProjectStatus(item.importedStatusName),
+    planningStatus: item.importedStatusName,
+    planningStatusOptionId: item.importedStatusOption,
     planningStatusSource: item.importedStatusName ? "GITHUB_PROJECT" : "NONE",
     state: "DRAFT",
     title: item.draftTitle,
@@ -249,6 +275,9 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
   const projectBoardCards = selectedRepository ? getProjectBoardCards(selectedRepository) : [];
   const selectedProjects = selectedRepository?.projects.map((projectLink) => projectLink.project) ?? [];
   const selectedProjectUrl = selectedProjects[0]?.url ?? null;
+  const statusMode: PlanningStatusMode = selectedRepository
+    ? resolveStatusMode(pickPrimaryProject(selectedRepository))
+    : { mode: "local" };
 
   return (
     <main className="min-h-screen bg-background">
@@ -401,6 +430,7 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
                         issues={projectBoardCards}
                         owner={selectedRepository.owner}
                         repo={selectedRepository.name}
+                        statusMode={statusMode}
                       />
                     )}
                   </div>

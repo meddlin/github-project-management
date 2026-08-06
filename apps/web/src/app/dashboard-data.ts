@@ -1,6 +1,13 @@
 import { prisma } from "@gpm/db";
+import { parseProjectStatusOptions, type ProjectStatusOption } from "./planning-project";
 
-export type TrackedPlanningStatus = "BACKLOG" | "READY" | "IN_PROGRESS" | "IN_REVIEW" | "DONE";
+export type Stage = "notStarted" | "inProgress" | "done";
+
+export type DashboardStageCounts = {
+  done: number;
+  inProgress: number;
+  notStarted: number;
+};
 
 export type DashboardStats = {
   dueThisWeekCount: number;
@@ -18,7 +25,7 @@ export type DashboardProjectCard = {
   openIssueCount: number;
   owner: string;
   planningHref: string;
-  statusCounts: Record<TrackedPlanningStatus, number>;
+  statusCounts: DashboardStageCounts;
 };
 
 export type DashboardAttentionItem = {
@@ -47,14 +54,6 @@ export type DashboardViewModel = {
   syncStatusLabel: string;
 };
 
-const TRACKED_STATUSES: TrackedPlanningStatus[] = [
-  "BACKLOG",
-  "READY",
-  "IN_PROGRESS",
-  "IN_REVIEW",
-  "DONE"
-];
-const STALLED_STATUSES: string[] = ["IN_PROGRESS", "IN_REVIEW"];
 const STALLED_AFTER_DAYS = 9;
 const DUE_SOON_DAYS = 7;
 const EMPTY_STATS: DashboardStats = {
@@ -70,7 +69,7 @@ type FavoriteOpenIssue = {
   id: string;
   number: number;
   planningEndDate: Date | null;
-  planningStatus: string;
+  planningStatus: string | null;
   repositoryId: string;
   title: string;
   updatedAt: Date;
@@ -103,8 +102,42 @@ export function isOverdue(
   return issue.planningEndDate !== null && issue.planningEndDate.getTime() < today.getTime();
 }
 
+export function getIssueStage(
+  planningStatus: string | null,
+  orderedStatusOptions: Array<{ name: string }>
+): Stage {
+  if (orderedStatusOptions.length === 0) {
+    if (!planningStatus) {
+      return "notStarted";
+    }
+
+    return planningStatus.trim().toLowerCase() === "done" ? "done" : "inProgress";
+  }
+
+  if (!planningStatus) {
+    return "notStarted";
+  }
+
+  const index = orderedStatusOptions.findIndex((option) => option.name === planningStatus);
+
+  if (index === -1) {
+    return "inProgress";
+  }
+
+  if (index === 0) {
+    return "notStarted";
+  }
+
+  if (index === orderedStatusOptions.length - 1) {
+    return "done";
+  }
+
+  return "inProgress";
+}
+
 export function isStalled(
-  issue: { planningEndDate: Date | null; planningStatus: string; updatedAt: Date },
+  issue: { planningEndDate: Date | null; updatedAt: Date },
+  stage: Stage,
   today: Date,
   now: Date
 ): boolean {
@@ -112,7 +145,7 @@ export function isStalled(
     return false;
   }
 
-  if (!STALLED_STATUSES.includes(issue.planningStatus)) {
+  if (stage !== "inProgress") {
     return false;
   }
 
@@ -120,11 +153,12 @@ export function isStalled(
 }
 
 export function needsAttention(
-  issue: { planningEndDate: Date | null; planningStatus: string; updatedAt: Date },
+  issue: { planningEndDate: Date | null; updatedAt: Date },
+  stage: Stage,
   today: Date,
   now: Date
 ): boolean {
-  return isOverdue(issue, today) || isStalled(issue, today, now);
+  return isOverdue(issue, today) || isStalled(issue, stage, today, now);
 }
 
 export function isDueThisWeek(issue: { planningEndDate: Date | null }, today: Date): boolean {
@@ -177,27 +211,6 @@ export function formatRelativeTime(timestamp: Date, now: Date): string {
   return `${diffDays}d ago`;
 }
 
-function buildStatusBuckets(
-  statusCounts: Array<{ _count: { _all: number }; planningStatus: string; repositoryId: string }>,
-  repositoryId: string
-): Record<TrackedPlanningStatus, number> {
-  const buckets = Object.fromEntries(
-    TRACKED_STATUSES.map((status) => [status, 0])
-  ) as Record<TrackedPlanningStatus, number>;
-
-  for (const row of statusCounts) {
-    if (row.repositoryId !== repositoryId) {
-      continue;
-    }
-
-    if ((TRACKED_STATUSES as string[]).includes(row.planningStatus)) {
-      buckets[row.planningStatus as TrackedPlanningStatus] = row._count._all;
-    }
-  }
-
-  return buckets;
-}
-
 function buildNextDueByRepo(issues: FavoriteOpenIssue[]): Map<string, FavoriteOpenIssue> {
   const nextDueByRepo = new Map<string, FavoriteOpenIssue>();
 
@@ -214,6 +227,76 @@ function buildNextDueByRepo(issues: FavoriteOpenIssue[]): Map<string, FavoriteOp
   }
 
   return nextDueByRepo;
+}
+
+async function buildOrderedStatusOptionsByRepo(
+  favoriteRepositoryIds: string[]
+): Promise<Map<string, ProjectStatusOption[]>> {
+  const [repositoryProjects, projectItemCounts] = await Promise.all([
+    prisma.gitHubRepositoryProject.findMany({
+      include: { project: true },
+      orderBy: { importedAt: "asc" },
+      where: { repositoryId: { in: favoriteRepositoryIds } }
+    }),
+    prisma.gitHubProjectItem.groupBy({
+      _count: { _all: true },
+      by: ["projectId"],
+      where: { issue: { repositoryId: { in: favoriteRepositoryIds } } }
+    })
+  ]);
+
+  const itemCountByProjectId = new Map(
+    projectItemCounts.map((row) => [row.projectId, row._count._all])
+  );
+  const linksByRepo = new Map<string, typeof repositoryProjects>();
+
+  for (const link of repositoryProjects) {
+    const links = linksByRepo.get(link.repositoryId) ?? [];
+
+    links.push(link);
+    linksByRepo.set(link.repositoryId, links);
+  }
+
+  const orderedStatusOptionsByRepo = new Map<string, ProjectStatusOption[]>();
+
+  for (const [repositoryId, links] of linksByRepo) {
+    const sortedLinks = [...links].sort((left, right) => {
+      const leftCount = itemCountByProjectId.get(left.projectId) ?? 0;
+      const rightCount = itemCountByProjectId.get(right.projectId) ?? 0;
+
+      if (leftCount !== rightCount) {
+        return rightCount - leftCount;
+      }
+
+      return left.importedAt.getTime() - right.importedAt.getTime();
+    });
+    const primaryProject = sortedLinks[0]?.project ?? null;
+
+    orderedStatusOptionsByRepo.set(
+      repositoryId,
+      primaryProject ? parseProjectStatusOptions(primaryProject.statusOptions) : []
+    );
+  }
+
+  return orderedStatusOptionsByRepo;
+}
+
+function buildStageCounts(
+  issues: Array<{ planningStatus: string | null; repositoryId: string }>,
+  repositoryId: string,
+  orderedStatusOptions: ProjectStatusOption[]
+): DashboardStageCounts {
+  const counts: DashboardStageCounts = { done: 0, inProgress: 0, notStarted: 0 };
+
+  for (const issue of issues) {
+    if (issue.repositoryId !== repositoryId) {
+      continue;
+    }
+
+    counts[getIssueStage(issue.planningStatus, orderedStatusOptions)] += 1;
+  }
+
+  return counts;
 }
 
 export async function getDashboardViewModel(): Promise<DashboardViewModel> {
@@ -241,46 +324,54 @@ export async function getDashboardViewModel(): Promise<DashboardViewModel> {
 
     const favoriteRepositoryIds = favoriteRepositories.map((repository) => repository.id);
 
-    const [openFavoriteIssues, statusCounts, recentlyClosedIssues, recentSyncRuns] = await Promise.all([
-      prisma.gitHubIssue.findMany({
-        select: {
-          assignees: true,
-          id: true,
-          number: true,
-          planningEndDate: true,
-          planningStatus: true,
-          repositoryId: true,
-          title: true,
-          updatedAt: true
-        },
-        where: { repositoryId: { in: favoriteRepositoryIds }, state: "OPEN" }
-      }),
-      prisma.gitHubIssue.groupBy({
-        _count: { _all: true },
-        by: ["repositoryId", "planningStatus"],
-        where: { repositoryId: { in: favoriteRepositoryIds } }
-      }),
-      prisma.gitHubIssue.findMany({
-        orderBy: { closedAt: "desc" },
-        select: { closedAt: true, id: true, number: true, repositoryId: true, title: true },
-        take: 8,
-        where: { closedAt: { not: null }, repositoryId: { in: favoriteRepositoryIds }, state: "CLOSED" }
-      }),
-      prisma.gitHubRepositorySyncRun.findMany({
-        orderBy: { finishedAt: "desc" },
-        take: 5,
-        where: { status: "success" }
-      })
-    ]);
+    const [openFavoriteIssues, allFavoriteIssues, recentlyClosedIssues, recentSyncRuns, orderedStatusOptionsByRepo] =
+      await Promise.all([
+        prisma.gitHubIssue.findMany({
+          select: {
+            assignees: true,
+            id: true,
+            number: true,
+            planningEndDate: true,
+            planningStatus: true,
+            repositoryId: true,
+            title: true,
+            updatedAt: true
+          },
+          where: { repositoryId: { in: favoriteRepositoryIds }, state: "OPEN" }
+        }),
+        prisma.gitHubIssue.findMany({
+          select: { planningStatus: true, repositoryId: true },
+          where: { repositoryId: { in: favoriteRepositoryIds } }
+        }),
+        prisma.gitHubIssue.findMany({
+          orderBy: { closedAt: "desc" },
+          select: { closedAt: true, id: true, number: true, repositoryId: true, title: true },
+          take: 8,
+          where: { closedAt: { not: null }, repositoryId: { in: favoriteRepositoryIds }, state: "CLOSED" }
+        }),
+        prisma.gitHubRepositorySyncRun.findMany({
+          orderBy: { finishedAt: "desc" },
+          take: 5,
+          where: { status: "success" }
+        }),
+        buildOrderedStatusOptionsByRepo(favoriteRepositoryIds)
+      ]);
 
     const repoById = new Map(favoriteRepositories.map((repository) => [repository.id, repository]));
     const nextDueByRepo = buildNextDueByRepo(openFavoriteIssues);
+    const stageByIssueId = new Map(
+      openFavoriteIssues.map((issue) => [
+        issue.id,
+        getIssueStage(issue.planningStatus, orderedStatusOptionsByRepo.get(issue.repositoryId) ?? [])
+      ])
+    );
 
     const stats: DashboardStats = {
       dueThisWeekCount: openFavoriteIssues.filter((issue) => isDueThisWeek(issue, today)).length,
       favoriteProjectCount: favoriteRepositories.length,
-      needsAttentionCount: openFavoriteIssues.filter((issue) => needsAttention(issue, today, now))
-        .length,
+      needsAttentionCount: openFavoriteIssues.filter((issue) =>
+        needsAttention(issue, stageByIssueId.get(issue.id) ?? "notStarted", today, now)
+      ).length,
       openIssueCount: favoriteRepositories.reduce(
         (sum, repository) => sum + repository.openIssueCount,
         0
@@ -290,6 +381,7 @@ export async function getDashboardViewModel(): Promise<DashboardViewModel> {
 
     const projectCards: DashboardProjectCard[] = favoriteRepositories.map((repository) => {
       const nextDueIssue = nextDueByRepo.get(repository.id) ?? null;
+      const orderedStatusOptions = orderedStatusOptionsByRepo.get(repository.id) ?? [];
 
       return {
         fullName: repository.fullName,
@@ -306,12 +398,12 @@ export async function getDashboardViewModel(): Promise<DashboardViewModel> {
         openIssueCount: repository.openIssueCount,
         owner: repository.owner,
         planningHref: `/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}/planning`,
-        statusCounts: buildStatusBuckets(statusCounts, repository.id)
+        statusCounts: buildStageCounts(allFavoriteIssues, repository.id, orderedStatusOptions)
       };
     });
 
     const attentionItems: DashboardAttentionItem[] = openFavoriteIssues
-      .filter((issue) => needsAttention(issue, today, now))
+      .filter((issue) => needsAttention(issue, stageByIssueId.get(issue.id) ?? "notStarted", today, now))
       .sort((a, b) => {
         const aOverdue = isOverdue(a, today);
         const bOverdue = isOverdue(b, today);

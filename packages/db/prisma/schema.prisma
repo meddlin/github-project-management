@@ -7,15 +7,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum PlanningStatus {
-  NO_STATUS
-  BACKLOG
-  READY
-  IN_PROGRESS
-  IN_REVIEW
-  DONE
-}
-
 enum PlanningStatusSource {
   NONE
   GITHUB_LABEL
@@ -82,7 +73,7 @@ model GitHubIssue {
   updatedAt    DateTime
   closedAt     DateTime?
   syncedAt     DateTime
-  planningStatus          PlanningStatus       @default(NO_STATUS)
+  planningStatus          String?
   planningStatusSource    PlanningStatusSource @default(NONE)
   planningStatusUpdatedAt DateTime?
   planningStartDate       DateTime?

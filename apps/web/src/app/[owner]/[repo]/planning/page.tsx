@@ -1,6 +1,11 @@
 import { prisma, type Prisma } from "@gpm/db";
 import { CircleAlert } from "lucide-react";
 import Link from "next/link";
+import {
+  parseProjectStatusOptions,
+  pickPrimaryProjectItem,
+  type PlanningStatusMode
+} from "../../../planning-project";
 import { CreateIssueDialog } from "./create-issue-dialog";
 import {
   PlanningIssueSplitView,
@@ -23,7 +28,19 @@ type PlanningPageProps = {
 const repositoryWithIssues = {
   include: {
     issues: {
+      include: {
+        projectItems: {
+          include: {
+            project: true
+          }
+        }
+      },
       orderBy: [{ state: "desc" }, { updatedAt: "desc" }]
+    },
+    projects: {
+      include: {
+        project: true
+      }
     }
   }
 } satisfies Prisma.GitHubRepositoryDefaultArgs;
@@ -34,6 +51,51 @@ type PlanningData = {
   error: string | null;
   repository: RepositoryWithIssues | null;
 };
+
+function pickPrimaryProject(
+  repository: RepositoryWithIssues
+): RepositoryWithIssues["projects"][number]["project"] | null {
+  if (repository.projects.length === 0) {
+    return null;
+  }
+
+  const itemCountByProjectId = new Map<string, number>();
+
+  for (const issue of repository.issues) {
+    for (const item of issue.projectItems) {
+      itemCountByProjectId.set(item.projectId, (itemCountByProjectId.get(item.projectId) ?? 0) + 1);
+    }
+  }
+
+  const sortedLinks = [...repository.projects].sort((left, right) => {
+    const leftCount = itemCountByProjectId.get(left.projectId) ?? 0;
+    const rightCount = itemCountByProjectId.get(right.projectId) ?? 0;
+
+    if (leftCount !== rightCount) {
+      return rightCount - leftCount;
+    }
+
+    return left.importedAt.getTime() - right.importedAt.getTime();
+  });
+
+  return sortedLinks[0]?.project ?? null;
+}
+
+function resolveStatusMode(
+  project: RepositoryWithIssues["projects"][number]["project"] | null
+): PlanningStatusMode {
+  if (!project?.statusFieldNodeId) {
+    return { mode: "local" };
+  }
+
+  const statusOptions = parseProjectStatusOptions(project.statusOptions);
+
+  if (statusOptions.length === 0) {
+    return { mode: "local" };
+  }
+
+  return { mode: "project", statusOptions };
+}
 
 async function getPlanningData(owner: string, name: string): Promise<PlanningData> {
   try {
@@ -73,6 +135,10 @@ function formatDateOnly(value: Date | null): string | null {
 }
 
 function serializeIssue(issue: NonNullable<PlanningData["repository"]>["issues"][number]): PlanningIssue {
+  const primaryItem = pickPrimaryProjectItem(
+    issue.projectItems.filter((item) => item.contentType === "ISSUE")
+  );
+
   return {
     assignees: issue.assignees,
     authorLogin: issue.authorLogin,
@@ -86,6 +152,7 @@ function serializeIssue(issue: NonNullable<PlanningData["repository"]>["issues"]
     planningEndDate: formatDateOnly(issue.planningEndDate),
     planningStartDate: formatDateOnly(issue.planningStartDate),
     planningStatus: issue.planningStatus,
+    planningStatusOptionId: primaryItem?.importedStatusOption ?? null,
     planningStatusSource: issue.planningStatusSource,
     state: issue.state,
     title: issue.title,
@@ -139,6 +206,7 @@ export default async function PlanningPage({ params, searchParams }: PlanningPag
   const decodedOwner = decodeURIComponent(owner);
   const decodedRepo = decodeURIComponent(repo);
   const { error, repository } = await getPlanningData(decodedOwner, decodedRepo);
+  const statusMode = repository ? resolveStatusMode(pickPrimaryProject(repository)) : null;
 
   return (
     <main className="min-h-screen bg-background">
@@ -229,12 +297,14 @@ export default async function PlanningPage({ params, searchParams }: PlanningPag
                   issues={repository.issues.map(serializeIssue)}
                   owner={decodedOwner}
                   repo={decodedRepo}
+                  statusMode={statusMode ?? { mode: "local" }}
                 />
               ) : (
                 <PlanningIssueSplitView
                   issues={repository.issues.map(serializeIssue)}
                   owner={decodedOwner}
                   repo={decodedRepo}
+                  statusMode={statusMode ?? { mode: "local" }}
                 />
               )}
             </>
