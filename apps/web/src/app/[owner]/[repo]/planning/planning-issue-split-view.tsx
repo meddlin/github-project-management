@@ -45,8 +45,14 @@ import { useEffect, useMemo, useState } from "react";
 import {
   getRepositoryLabels,
   updatePlanningIssue,
-  type PlanningStatusValue
+  type PlanningStatusUpdate
 } from "../../../actions";
+import {
+  LOCAL_STATUS_OPTIONS,
+  NO_STATUS_COLUMN_ID,
+  resolveIssueStatusValue,
+  type PlanningStatusMode
+} from "../../../planning-project";
 
 export type PlanningIssue = {
   assignees: string[];
@@ -60,7 +66,8 @@ export type PlanningIssue = {
   number: number;
   planningEndDate: string | null;
   planningStartDate: string | null;
-  planningStatus: string;
+  planningStatus: string | null;
+  planningStatusOptionId: string | null;
   planningStatusSource: string;
   state: string;
   title: string;
@@ -68,14 +75,32 @@ export type PlanningIssue = {
   url: string;
 };
 
-const planningStatusOptions: Array<{ label: string; value: PlanningStatusValue }> = [
-  { label: "No status", value: "NO_STATUS" },
-  { label: "Backlog", value: "BACKLOG" },
-  { label: "Ready", value: "READY" },
-  { label: "In progress", value: "IN_PROGRESS" },
-  { label: "In review", value: "IN_REVIEW" },
-  { label: "Done", value: "DONE" }
-];
+function buildStatusChoices(
+  statusMode: PlanningStatusMode
+): Array<{ label: string; value: string }> {
+  if (statusMode.mode === "project") {
+    return [
+      { label: "No status", value: NO_STATUS_COLUMN_ID },
+      ...statusMode.statusOptions.map((option) => ({ label: option.name, value: option.id }))
+    ];
+  }
+
+  return [
+    { label: "No status", value: NO_STATUS_COLUMN_ID },
+    ...LOCAL_STATUS_OPTIONS.map((option) => ({ label: option.label, value: option.id }))
+  ];
+}
+
+function buildPlanningStatusUpdate(
+  statusMode: PlanningStatusMode,
+  value: string
+): PlanningStatusUpdate {
+  const resolved = value === NO_STATUS_COLUMN_ID ? null : value;
+
+  return statusMode.mode === "project"
+    ? { mode: "project", optionId: resolved }
+    : { mode: "local", value: resolved };
+}
 
 function formatDate(value: string | null): string {
   if (!value) {
@@ -86,12 +111,6 @@ function formatDate(value: string | null): string {
     dateStyle: "medium",
     timeStyle: "short"
   }).format(new Date(value));
-}
-
-function normalizePlanningStatus(status: string): PlanningStatusValue {
-  return planningStatusOptions.some((option) => option.value === status)
-    ? (status as PlanningStatusValue)
-    : "NO_STATUS";
 }
 
 function parseCommaSeparated(value: string): string[] {
@@ -130,19 +149,21 @@ function IssueEditSheet({
   onOpenChange,
   open,
   owner,
-  repo
+  repo,
+  statusMode
 }: {
   issue: PlanningIssue | null;
   onOpenChange: (open: boolean) => void;
   open: boolean;
   owner: string;
   repo: string;
+  statusMode: PlanningStatusMode;
 }) {
   const router = useRouter();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [state, setState] = useState("OPEN");
-  const [planningStatus, setPlanningStatus] = useState<PlanningStatusValue>("NO_STATUS");
+  const [planningStatus, setPlanningStatus] = useState<string>(NO_STATUS_COLUMN_ID);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [assignees, setAssignees] = useState("");
@@ -153,6 +174,7 @@ function IssueEditSheet({
   const [hasLoadedLabels, setHasLoadedLabels] = useState(false);
   const [isLoadingLabels, setIsLoadingLabels] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const statusChoices = useMemo(() => buildStatusChoices(statusMode), [statusMode]);
 
   useEffect(() => {
     if (!issue) {
@@ -162,13 +184,13 @@ function IssueEditSheet({
     setTitle(issue.title);
     setDescription(issue.bodyText);
     setState(issue.state.toUpperCase() === "CLOSED" ? "CLOSED" : "OPEN");
-    setPlanningStatus(normalizePlanningStatus(issue.planningStatus));
+    setPlanningStatus(resolveIssueStatusValue(issue, statusMode));
     setStartDate(issue.planningStartDate ?? "");
     setEndDate(issue.planningEndDate ?? "");
     setAssignees(issue.assignees.join(", "));
     setSelectedLabels(issue.labels);
     setSubmitError(null);
-  }, [issue]);
+  }, [issue, statusMode]);
 
   useEffect(() => {
     if (!open || hasLoadedLabels || isLoadingLabels) {
@@ -218,7 +240,7 @@ function IssueEditSheet({
       issueId: issue.id,
       labels: selectedLabels,
       owner,
-      planningStatus,
+      planningStatus: buildPlanningStatusUpdate(statusMode, planningStatus),
       repo,
       startDate,
       state,
@@ -309,7 +331,7 @@ function IssueEditSheet({
                     <Select
                       disabled={isSubmitting}
                       onValueChange={(value) => {
-                        setPlanningStatus(value as PlanningStatusValue);
+                        setPlanningStatus(value);
                       }}
                       value={planningStatus}
                     >
@@ -318,7 +340,7 @@ function IssueEditSheet({
                       </SelectTrigger>
                       <SelectContent>
                         <SelectGroup>
-                          {planningStatusOptions.map((option) => (
+                          {statusChoices.map((option) => (
                             <SelectItem key={option.value} value={option.value}>
                               {option.label}
                             </SelectItem>
@@ -482,11 +504,13 @@ function IssueEditSheet({
 export function PlanningIssueSplitView({
   issues,
   owner,
-  repo
+  repo,
+  statusMode
 }: {
   issues: PlanningIssue[];
   owner: string;
   repo: string;
+  statusMode: PlanningStatusMode;
 }) {
   const sortedIssues = useMemo(() => {
     return [...issues].sort((left, right) => {
@@ -578,11 +602,7 @@ export function PlanningIssueSplitView({
                       <StateBadge state={issue.state} />
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">
-                      {
-                        planningStatusOptions.find(
-                          (option) => option.value === normalizePlanningStatus(issue.planningStatus)
-                        )?.label
-                      }
+                      {issue.planningStatus ?? "No status"}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">
                       {issue.assignees.length > 0 ? issue.assignees.join(", ") : "Unassigned"}
@@ -604,6 +624,7 @@ export function PlanningIssueSplitView({
         open={isSheetOpen}
         owner={owner}
         repo={repo}
+        statusMode={statusMode}
       />
     </>
   );

@@ -25,9 +25,15 @@ import { CSS } from "@dnd-kit/utilities";
 import { CalendarClock, ExternalLink, GripVertical, MessageSquare } from "lucide-react";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import {
-  updateIssuePlanningStatus,
-  type PlanningStatusValue
+  updateIssueLocalPlanningStatus,
+  updateIssuePlanningStatus
 } from "../../../actions";
+import {
+  LOCAL_STATUS_OPTIONS,
+  NO_STATUS_COLUMN_ID,
+  resolveIssueStatusValue,
+  type PlanningStatusMode
+} from "../../../planning-project";
 import type { PlanningIssue } from "./planning-issue-split-view";
 
 export type PlanningKanbanCard = Omit<PlanningIssue, "bodyText" | "number" | "url"> & {
@@ -36,25 +42,32 @@ export type PlanningKanbanCard = Omit<PlanningIssue, "bodyText" | "number" | "ur
   url: string | null;
 };
 
-const columns: Array<{ label: string; status: PlanningStatusValue }> = [
-  { label: "No status", status: "NO_STATUS" },
-  { label: "Backlog", status: "BACKLOG" },
-  { label: "Ready", status: "READY" },
-  { label: "In progress", status: "IN_PROGRESS" },
-  { label: "In review", status: "IN_REVIEW" },
-  { label: "Done", status: "DONE" }
-];
+type KanbanColumnDef = { id: string; label: string };
 
 type KanbanDragData =
   | {
+      columnId: string;
       issueId: string;
-      status: PlanningStatusValue;
       type: "card";
     }
   | {
-      status: PlanningStatusValue;
+      columnId: string;
       type: "column";
     };
+
+function buildColumns(statusMode: PlanningStatusMode): KanbanColumnDef[] {
+  if (statusMode.mode === "project") {
+    return [
+      { id: NO_STATUS_COLUMN_ID, label: "No status" },
+      ...statusMode.statusOptions.map((option) => ({ id: option.id, label: option.name }))
+    ];
+  }
+
+  return [
+    { id: NO_STATUS_COLUMN_ID, label: "No status" },
+    ...LOCAL_STATUS_OPTIONS.map((option) => ({ id: option.id, label: option.label }))
+  ];
+}
 
 const kanbanCollisionDetection: CollisionDetection = (args) => {
   const pointerCollisions = pointerWithin(args);
@@ -89,30 +102,28 @@ function formatDateOnly(value: string | null): string {
   }).format(new Date(`${value}T00:00:00.000Z`));
 }
 
-function normalizeIssueStatus(status: string): PlanningStatusValue {
-  return columns.some((column) => column.status === status)
-    ? (status as PlanningStatusValue)
-    : "NO_STATUS";
+function normalizeColumnId(columnId: string | null | undefined, columns: KanbanColumnDef[]): string {
+  return columns.some((column) => column.id === columnId) ? (columnId as string) : NO_STATUS_COLUMN_ID;
 }
 
-function getKanbanDragData(value: unknown): KanbanDragData | null {
+function getKanbanDragData(value: unknown, columns: KanbanColumnDef[]): KanbanDragData | null {
   if (!value || typeof value !== "object") {
     return null;
   }
 
-  const data = value as Partial<KanbanDragData>;
+  const data = value as Partial<{ columnId: string; issueId: string; type: string }>;
 
-  if (data.type === "card" && data.issueId && data.status) {
+  if (data.type === "card" && data.issueId) {
     return {
+      columnId: normalizeColumnId(data.columnId, columns),
       issueId: data.issueId,
-      status: normalizeIssueStatus(data.status),
       type: "card"
     };
   }
 
-  if (data.type === "column" && data.status) {
+  if (data.type === "column") {
     return {
-      status: normalizeIssueStatus(data.status),
+      columnId: normalizeColumnId(data.columnId, columns),
       type: "column"
     };
   }
@@ -145,20 +156,20 @@ function GitHubStateBadge({ state }: { state: string }) {
 }
 
 function KanbanCard({
+  columnId,
   isOverlay = false,
-  issue,
-  status
+  issue
 }: {
+  columnId: string;
   isOverlay?: boolean;
   issue: PlanningKanbanCard;
-  status: PlanningStatusValue;
 }) {
   const isDraft = issue.contentType === "DRAFT_ISSUE";
   const canDrag = !isOverlay && !isDraft;
   const { attributes, isDragging, listeners, setNodeRef, transform, transition } = useSortable({
     data: {
+      columnId,
       issueId: issue.id,
-      status,
       type: "card"
     },
     disabled: !canDrag,
@@ -265,20 +276,20 @@ function KanbanCard({
 }
 
 function KanbanColumn({
+  columnId,
   issues,
-  label,
-  status
+  label
 }: {
+  columnId: string;
   issues: PlanningKanbanCard[];
   label: string;
-  status: PlanningStatusValue;
 }) {
   const { isOver, setNodeRef } = useDroppable({
     data: {
-      status,
+      columnId,
       type: "column"
     },
-    id: status
+    id: columnId
   });
 
   return (
@@ -300,7 +311,7 @@ function KanbanColumn({
       >
         <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-3">
           {issues.map((issue) => (
-            <KanbanCard issue={issue} key={issue.id} status={status} />
+            <KanbanCard columnId={columnId} issue={issue} key={issue.id} />
           ))}
           <div
             className={`flex min-h-16 items-center justify-center rounded-md border border-dashed text-xs font-medium ${
@@ -320,11 +331,13 @@ function KanbanColumn({
 export function PlanningKanbanBoard({
   issues,
   owner,
-  repo
+  repo,
+  statusMode
 }: {
   issues: PlanningKanbanCard[];
   owner: string;
   repo: string;
+  statusMode: PlanningStatusMode;
 }) {
   const [localIssues, setLocalIssues] = useState(issues);
   const [activeIssueId, setActiveIssueId] = useState<string | null>(null);
@@ -344,29 +357,28 @@ export function PlanningKanbanBoard({
       coordinateGetter: sortableKeyboardCoordinates
     })
   );
+  const columns = useMemo(() => buildColumns(statusMode), [statusMode]);
   const activeIssue = localIssues.find((issue) => issue.id === activeIssueId) ?? null;
-  const issuesByStatus = useMemo(() => {
-    return columns.reduce<Record<PlanningStatusValue, PlanningKanbanCard[]>>(
-      (groupedIssues, column) => {
-        groupedIssues[column.status] = localIssues
-          .filter((issue) => normalizeIssueStatus(issue.planningStatus) === column.status)
-          .sort(
-            (left, right) =>
-              new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
-          );
-
-        return groupedIssues;
-      },
-      {
-        BACKLOG: [],
-        DONE: [],
-        IN_PROGRESS: [],
-        IN_REVIEW: [],
-        NO_STATUS: [],
-        READY: []
-      }
+  const issuesByColumn = useMemo(() => {
+    const groupedIssues: Record<string, PlanningKanbanCard[]> = Object.fromEntries(
+      columns.map((column) => [column.id, []])
     );
-  }, [localIssues]);
+
+    for (const issue of localIssues) {
+      const columnId = resolveIssueStatusValue(issue, statusMode);
+      const targetColumnId = groupedIssues[columnId] ? columnId : NO_STATUS_COLUMN_ID;
+
+      groupedIssues[targetColumnId]?.push(issue);
+    }
+
+    for (const columnIssues of Object.values(groupedIssues)) {
+      columnIssues.sort(
+        (left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
+      );
+    }
+
+    return groupedIssues;
+  }, [columns, localIssues, statusMode]);
 
   function handleDragStart(event: DragStartEvent) {
     setActiveIssueId(String(event.active.id));
@@ -386,45 +398,56 @@ export function PlanningKanbanBoard({
       return;
     }
 
-    const activeData = getKanbanDragData(event.active.data.current);
-    const overData = getKanbanDragData(event.over.data.current);
-    const currentStatus = activeData?.status;
-    const nextStatus = overData?.status;
+    const activeData = getKanbanDragData(event.active.data.current, columns);
+    const overData = getKanbanDragData(event.over.data.current, columns);
+    const currentColumnId = activeData?.columnId;
+    const nextColumnId = overData?.columnId;
 
-    if (!currentStatus || !nextStatus || currentStatus === nextStatus) {
+    if (!currentColumnId || !nextColumnId || currentColumnId === nextColumnId) {
       return;
     }
 
     setStatusError(null);
 
+    const nextOptionId = nextColumnId === NO_STATUS_COLUMN_ID ? null : nextColumnId;
+    const nextLocalLabel =
+      nextColumnId === NO_STATUS_COLUMN_ID
+        ? null
+        : (LOCAL_STATUS_OPTIONS.find((option) => option.id === nextColumnId)?.label ?? null);
+
     setLocalIssues((currentIssues) =>
       currentIssues.map((issue) =>
         issue.id === issueId
-          ? {
-              ...issue,
-              planningStatus: nextStatus,
-              planningStatusSource: "LOCAL"
-            }
+          ? statusMode.mode === "project"
+            ? { ...issue, planningStatusOptionId: nextOptionId, planningStatusSource: "LOCAL" }
+            : { ...issue, planningStatus: nextLocalLabel, planningStatusSource: "LOCAL" }
           : issue
       )
     );
 
     startTransition(() => {
-      void updateIssuePlanningStatus({
-        issueId,
-        owner,
-        repo,
-        status: nextStatus
-      }).catch((error: unknown) => {
+      const updatePromise =
+        statusMode.mode === "project"
+          ? updateIssuePlanningStatus({ issueId, owner, repo, status: nextOptionId })
+          : updateIssueLocalPlanningStatus({ issueId, owner, repo, status: nextColumnId === NO_STATUS_COLUMN_ID ? null : nextColumnId });
+
+      void updatePromise.catch((error: unknown) => {
         setLocalIssues((currentIssues) =>
           currentIssues.map((issue) =>
             issue.id === issueId
-              ? {
-                  ...issue,
-                  planningStatus: currentStatus,
-                  planningStatusSource:
-                    draggedIssue?.planningStatusSource ?? issue.planningStatusSource
-                }
+              ? statusMode.mode === "project"
+                ? {
+                    ...issue,
+                    planningStatusOptionId: draggedIssue?.planningStatusOptionId ?? null,
+                    planningStatusSource:
+                      draggedIssue?.planningStatusSource ?? issue.planningStatusSource
+                  }
+                : {
+                    ...issue,
+                    planningStatus: draggedIssue?.planningStatus ?? issue.planningStatus,
+                    planningStatusSource:
+                      draggedIssue?.planningStatusSource ?? issue.planningStatusSource
+                  }
               : issue
           )
         );
@@ -467,10 +490,10 @@ export function PlanningKanbanBoard({
         <div className="flex min-w-max gap-4">
           {columns.map((column) => (
             <KanbanColumn
-              issues={issuesByStatus[column.status]}
-              key={column.status}
+              columnId={column.id}
+              issues={issuesByColumn[column.id] ?? []}
+              key={column.id}
               label={column.label}
-              status={column.status}
             />
           ))}
         </div>
@@ -478,9 +501,9 @@ export function PlanningKanbanBoard({
       <DragOverlay>
         {activeIssue ? (
           <KanbanCard
+            columnId={resolveIssueStatusValue(activeIssue, statusMode)}
             isOverlay
             issue={activeIssue}
-            status={normalizeIssueStatus(activeIssue.planningStatus)}
           />
         ) : null}
       </DragOverlay>

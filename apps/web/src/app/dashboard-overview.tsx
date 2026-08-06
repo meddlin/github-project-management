@@ -3,27 +3,23 @@ import type {
   DashboardActivityItem,
   DashboardAttentionItem,
   DashboardProjectCard,
-  DashboardStats,
-  TrackedPlanningStatus
+  DashboardStageCounts,
+  DashboardStats
 } from "./dashboard-data";
 
-const STATUS_SEGMENT_CLASS: Record<TrackedPlanningStatus, string> = {
-  BACKLOG: "bg-muted-foreground/20",
-  DONE: "bg-primary/70",
-  IN_PROGRESS: "bg-muted-foreground/50",
-  IN_REVIEW: "bg-muted-foreground/65",
-  READY: "bg-muted-foreground/35"
+const STAGE_SEGMENT_CLASS: Record<keyof DashboardStageCounts, string> = {
+  done: "bg-primary/70",
+  inProgress: "bg-muted-foreground/50",
+  notStarted: "bg-muted-foreground/20"
 };
 
-const STATUS_LABELS: Record<TrackedPlanningStatus, string> = {
-  BACKLOG: "Backlog",
-  DONE: "Done",
-  IN_PROGRESS: "In progress",
-  IN_REVIEW: "In review",
-  READY: "Ready"
+const STAGE_LABELS: Record<keyof DashboardStageCounts, string> = {
+  done: "Done",
+  inProgress: "In progress",
+  notStarted: "Not started"
 };
 
-const STATUS_ORDER: TrackedPlanningStatus[] = ["BACKLOG", "READY", "IN_PROGRESS", "IN_REVIEW", "DONE"];
+const STAGE_ORDER: Array<keyof DashboardStageCounts> = ["notStarted", "inProgress", "done"];
 
 function Tag({ active, children }: { active: boolean; children: React.ReactNode }) {
   return (
@@ -87,8 +83,8 @@ export function StatTiles({ stats }: { stats: DashboardStats }) {
   );
 }
 
-function ProgressBar({ statusCounts }: { statusCounts: Record<TrackedPlanningStatus, number> }) {
-  const total = STATUS_ORDER.reduce((sum, status) => sum + statusCounts[status], 0);
+function ProgressBar({ statusCounts }: { statusCounts: DashboardStageCounts }) {
+  const total = STAGE_ORDER.reduce((sum, stage) => sum + statusCounts[stage], 0);
 
   if (total === 0) {
     return <div className="h-1.5 w-full rounded-full bg-muted-foreground/10" />;
@@ -96,12 +92,12 @@ function ProgressBar({ statusCounts }: { statusCounts: Record<TrackedPlanningSta
 
   return (
     <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-muted">
-      {STATUS_ORDER.filter((status) => statusCounts[status] > 0).map((status) => (
+      {STAGE_ORDER.filter((stage) => statusCounts[stage] > 0).map((stage) => (
         <div
-          className={STATUS_SEGMENT_CLASS[status]}
-          key={status}
-          style={{ width: `${(statusCounts[status] / total) * 100}%` }}
-          title={`${STATUS_LABELS[status]}: ${statusCounts[status]}`}
+          className={STAGE_SEGMENT_CLASS[stage]}
+          key={stage}
+          style={{ width: `${(statusCounts[stage] / total) * 100}%` }}
+          title={`${STAGE_LABELS[stage]}: ${statusCounts[stage]}`}
         />
       ))}
     </div>
