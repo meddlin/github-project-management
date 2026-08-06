@@ -756,3 +756,44 @@ export async function syncRepositoryPlanningData({
     syncedAt: result.syncedAt.toISOString()
   };
 }
+
+export async function syncAllFavoritesPlanningData() {
+  const token = requireGitHubToken();
+  const favorites = await prisma.gitHubRepository.findMany({
+    select: {
+      name: true,
+      owner: true
+    },
+    where: {
+      favorite: true
+    }
+  });
+
+  const results = await Promise.allSettled(
+    favorites.map((favorite) =>
+      syncRepositoryPlanningDataFromGitHub({
+        name: favorite.name,
+        owner: favorite.owner,
+        token
+      })
+    )
+  );
+
+  const succeededCount = results.filter((result) => result.status === "fulfilled").length;
+  const failedCount = results.length - succeededCount;
+
+  revalidatePath("/");
+  revalidatePath("/projects");
+
+  for (const favorite of favorites) {
+    revalidatePath(
+      `/${encodeURIComponent(favorite.owner)}/${encodeURIComponent(favorite.name)}/planning`
+    );
+  }
+
+  return {
+    failedCount,
+    succeededCount,
+    totalCount: favorites.length
+  };
+}
