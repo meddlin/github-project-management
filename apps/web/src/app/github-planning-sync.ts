@@ -1,4 +1,4 @@
-import { prisma } from "@gpm/db";
+import { prisma, requestGitHubGraphql } from "@gpm/db";
 import { pickPrimaryProjectItem } from "./planning-project";
 
 type GitHubPageInfo = {
@@ -38,12 +38,29 @@ type GitHubRepositoryNode = {
   name: string;
   nameWithOwner: string;
   openIssues: { totalCount: number };
+  openPullRequests: { totalCount: number };
   owner: { login: string };
+  primaryLanguage: { color: string | null; name: string } | null;
   projectsV2: { totalCount: number };
+  pullRequests: { totalCount: number };
   pushedAt: string | null;
   updatedAt: string | null;
   url: string;
   visibility: string;
+};
+
+type GitHubPullRequestNode = {
+  author: { login: string } | null;
+  comments: { totalCount: number };
+  createdAt: string;
+  databaseId: number | null;
+  id: string;
+  isDraft: boolean;
+  number: number;
+  state: string;
+  title: string;
+  updatedAt: string;
+  url: string;
 };
 
 type GitHubProjectFieldNode = {
@@ -121,6 +138,18 @@ type GitHubIssuesResponse = {
   errors?: Array<{ message: string }>;
 };
 
+type GitHubPullRequestsResponse = {
+  data?: {
+    repository: {
+      pullRequests: {
+        nodes: Array<GitHubPullRequestNode | null>;
+        pageInfo: GitHubPageInfo;
+      };
+    } | null;
+  };
+  errors?: Array<{ message: string }>;
+};
+
 type GitHubRepositoryProjectsResponse = {
   data?: {
     repository: {
@@ -148,6 +177,9 @@ type GitHubProjectItemsResponse = {
 type GitHubIssuesConnection = NonNullable<
   NonNullable<GitHubIssuesResponse["data"]>["repository"]
 >["issues"];
+type GitHubPullRequestsConnection = NonNullable<
+  NonNullable<GitHubPullRequestsResponse["data"]>["repository"]
+>["pullRequests"];
 type GitHubRepositoryProjectsConnection = NonNullable<
   NonNullable<GitHubRepositoryProjectsResponse["data"]>["repository"]
 >["projectsV2"];
@@ -174,10 +206,20 @@ const repositoryQuery = `
       openIssues: issues(first: 1, states: OPEN) {
         totalCount
       }
+      openPullRequests: pullRequests(first: 1, states: OPEN) {
+        totalCount
+      }
       owner {
         login
       }
+      primaryLanguage {
+        color
+        name
+      }
       projectsV2(first: 1) {
+        totalCount
+      }
+      pullRequests(first: 1) {
         totalCount
       }
       pushedAt
@@ -219,6 +261,41 @@ const issuesQuery = `
               name
             }
           }
+          number
+          state
+          title
+          updatedAt
+          url
+        }
+        pageInfo {
+          endCursor
+          hasNextPage
+        }
+      }
+    }
+  }
+`;
+
+const pullRequestsQuery = `
+  query PullRequests($owner: String!, $name: String!, $after: String) {
+    repository(owner: $owner, name: $name) {
+      pullRequests(
+        first: 100
+        after: $after
+        states: OPEN
+        orderBy: { field: UPDATED_AT, direction: DESC }
+      ) {
+        nodes {
+          author {
+            login
+          }
+          comments {
+            totalCount
+          }
+          createdAt
+          databaseId
+          id
+          isDraft
           number
           state
           title
@@ -384,42 +461,6 @@ function isIssueContent(
   return content.__typename === "Issue" && "id" in content;
 }
 
-async function requestGitHubGraphql<T>({
-  query,
-  token,
-  variables
-}: {
-  query: string;
-  token: string;
-  variables: Record<string, unknown>;
-}): Promise<T> {
-  const response = await fetch("https://api.github.com/graphql", {
-    body: JSON.stringify({
-      query,
-      variables
-    }),
-    headers: {
-      Accept: "application/vnd.github+json",
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-      "User-Agent": "github-project-management"
-    },
-    method: "POST"
-  });
-
-  if (!response.ok) {
-    throw new Error(`GitHub GraphQL request failed: ${response.status} ${response.statusText}`);
-  }
-
-  const payload = (await response.json()) as T & { errors?: Array<{ message: string }> };
-
-  if (payload.errors?.length) {
-    throw new Error(payload.errors.map((error) => error.message).join("; "));
-  }
-
-  return payload;
-}
-
 async function fetchGitHubRepository({
   name,
   owner,
@@ -431,6 +472,7 @@ async function fetchGitHubRepository({
 }): Promise<GitHubRepositoryNode> {
   const payload = await requestGitHubGraphql<GitHubRepositoryResponse>({
     query: repositoryQuery,
+    requestName: `repository:${owner}/${name}`,
     token,
     variables: {
       name,
@@ -461,6 +503,7 @@ async function fetchGitHubIssues({
   do {
     const payload: GitHubIssuesResponse = await requestGitHubGraphql<GitHubIssuesResponse>({
       query: issuesQuery,
+      requestName: `issues:${owner}/${name}`,
       token,
       variables: {
         after,
@@ -483,6 +526,48 @@ async function fetchGitHubIssues({
   return issues;
 }
 
+async function fetchGitHubPullRequests({
+  name,
+  owner,
+  token
+}: {
+  name: string;
+  owner: string;
+  token: string;
+}): Promise<GitHubPullRequestNode[]> {
+  const pullRequests: GitHubPullRequestNode[] = [];
+  let after: string | null = null;
+
+  do {
+    const payload: GitHubPullRequestsResponse =
+      await requestGitHubGraphql<GitHubPullRequestsResponse>({
+        query: pullRequestsQuery,
+        requestName: `pullRequests:${owner}/${name}`,
+        token,
+        variables: {
+          after,
+          name,
+          owner
+        }
+      });
+    const connection: GitHubPullRequestsConnection | undefined =
+      payload.data?.repository?.pullRequests;
+
+    if (!connection) {
+      throw new Error(`GitHub GraphQL response did not include pull requests for ${owner}/${name}.`);
+    }
+
+    pullRequests.push(
+      ...connection.nodes.filter(
+        (node: GitHubPullRequestNode | null): node is GitHubPullRequestNode => node !== null
+      )
+    );
+    after = connection.pageInfo.hasNextPage ? connection.pageInfo.endCursor : null;
+  } while (after);
+
+  return pullRequests;
+}
+
 async function fetchGitHubRepositoryProjects({
   name,
   owner,
@@ -499,6 +584,7 @@ async function fetchGitHubRepositoryProjects({
     const payload: GitHubRepositoryProjectsResponse =
       await requestGitHubGraphql<GitHubRepositoryProjectsResponse>({
       query: repositoryProjectsQuery,
+      requestName: `projects:${owner}/${name}`,
       token,
       variables: {
         after,
@@ -538,9 +624,10 @@ async function fetchGitHubProjectItems({
   do {
     const payload: GitHubProjectItemsResponse =
       await requestGitHubGraphql<GitHubProjectItemsResponse>({
-      query: projectItemsQuery,
-      token,
-      variables: {
+        query: projectItemsQuery,
+        requestName: `projectItems:${projectId}`,
+        token,
+        variables: {
         after,
         projectId
       }
@@ -609,13 +696,18 @@ export async function syncRepositoryPlanningDataFromGitHub({
   owner: string;
   token: string;
 }) {
-  const [repository, issues, projects] = await Promise.all([
+  const [repository, issues, pullRequests, projects] = await Promise.all([
     fetchGitHubRepository({
       name,
       owner,
       token
     }),
     fetchGitHubIssues({
+      name,
+      owner,
+      token
+    }),
+    fetchGitHubPullRequests({
       name,
       owner,
       token
@@ -630,6 +722,8 @@ export async function syncRepositoryPlanningDataFromGitHub({
   const githubId = repository.databaseId?.toString() ?? repository.id;
   const linkedProjectCount = repository.projectsV2.totalCount;
   const issueCount = repository.issues.totalCount;
+  const pullRequestCount = repository.pullRequests.totalCount;
+  const openPullRequestCount = repository.openPullRequests.totalCount;
   const persistedRepository = await prisma.gitHubRepository.upsert({
     create: {
       defaultBranch: repository.defaultBranchRef?.name,
@@ -646,7 +740,12 @@ export async function syncRepositoryPlanningDataFromGitHub({
       name: repository.name,
       nodeId: repository.id,
       openIssueCount: repository.openIssues.totalCount,
+      openPullRequestCount,
       owner: repository.owner.login,
+      primaryLanguageColor: repository.primaryLanguage?.color ?? null,
+      primaryLanguageName: repository.primaryLanguage?.name ?? null,
+      pullRequestCount,
+      pullRequestsSyncedAt: syncedAt,
       pushedAt: parseGitHubDate(repository.pushedAt),
       syncedAt,
       url: repository.url,
@@ -666,7 +765,12 @@ export async function syncRepositoryPlanningDataFromGitHub({
       name: repository.name,
       nodeId: repository.id,
       openIssueCount: repository.openIssues.totalCount,
+      openPullRequestCount,
       owner: repository.owner.login,
+      primaryLanguageColor: repository.primaryLanguage?.color ?? null,
+      primaryLanguageName: repository.primaryLanguage?.name ?? null,
+      pullRequestCount,
+      pullRequestsSyncedAt: syncedAt,
       pushedAt: parseGitHubDate(repository.pushedAt),
       syncedAt,
       url: repository.url,
@@ -754,6 +858,57 @@ export async function syncRepositoryPlanningDataFromGitHub({
     where: {
       repositoryId: persistedRepository.id,
       ...(syncedIssueNodeIds.length > 0 ? { nodeId: { notIn: syncedIssueNodeIds } } : {})
+    }
+  });
+
+  const syncedPullRequestNodeIds: string[] = [];
+
+  for (const pullRequest of pullRequests) {
+    syncedPullRequestNodeIds.push(pullRequest.id);
+
+    await prisma.gitHubPullRequest.upsert({
+      create: {
+        authorLogin: pullRequest.author?.login ?? null,
+        commentCount: pullRequest.comments.totalCount,
+        createdAt: new Date(pullRequest.createdAt),
+        githubId: pullRequest.databaseId?.toString() ?? pullRequest.id,
+        isDraft: pullRequest.isDraft,
+        nodeId: pullRequest.id,
+        number: pullRequest.number,
+        repositoryId: persistedRepository.id,
+        state: pullRequest.state,
+        syncedAt,
+        title: pullRequest.title,
+        updatedAt: new Date(pullRequest.updatedAt),
+        url: pullRequest.url
+      },
+      update: {
+        authorLogin: pullRequest.author?.login ?? null,
+        commentCount: pullRequest.comments.totalCount,
+        githubId: pullRequest.databaseId?.toString() ?? pullRequest.id,
+        isDraft: pullRequest.isDraft,
+        number: pullRequest.number,
+        state: pullRequest.state,
+        syncedAt,
+        title: pullRequest.title,
+        updatedAt: new Date(pullRequest.updatedAt),
+        url: pullRequest.url
+      },
+      where: {
+        repositoryId_number: {
+          number: pullRequest.number,
+          repositoryId: persistedRepository.id
+        }
+      }
+    });
+  }
+
+  await prisma.gitHubPullRequest.deleteMany({
+    where: {
+      repositoryId: persistedRepository.id,
+      ...(syncedPullRequestNodeIds.length > 0
+        ? { nodeId: { notIn: syncedPullRequestNodeIds } }
+        : {})
     }
   });
 
@@ -946,6 +1101,7 @@ export async function syncRepositoryPlanningDataFromGitHub({
   return {
     issueCount: issues.length,
     projectCount: persistedProjectIds.length,
+    pullRequestCount: pullRequests.length,
     syncedAt
   };
 }
