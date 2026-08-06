@@ -2,6 +2,7 @@ import { prisma } from "@gpm/db";
 import { parseProjectStatusOptions, type ProjectStatusOption } from "./planning-project";
 
 export type Stage = "notStarted" | "inProgress" | "done";
+export type DashboardView = "overview" | "calendar";
 
 export type DashboardStageCounts = {
   done: number;
@@ -44,9 +45,21 @@ export type DashboardActivityItem = {
   text: string;
 };
 
+export type DashboardCalendarItem = {
+  endDate: string;
+  id: string;
+  number: number;
+  repositoryFullName: string;
+  startDate: string;
+  state: string;
+  title: string;
+  url: string;
+};
+
 export type DashboardViewModel = {
   activityItems: DashboardActivityItem[];
   attentionItems: DashboardAttentionItem[];
+  calendarItems: DashboardCalendarItem[];
   error: string | null;
   greeting: string;
   projectCards: DashboardProjectCard[];
@@ -89,6 +102,10 @@ export function getGreeting(hour: number): string {
 
 function startOfUtcDay(date: Date): Date {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
+function formatDateOnly(date: Date): string {
+  return date.toISOString().slice(0, 10);
 }
 
 function daysBetween(from: Date, to: Date): number {
@@ -299,7 +316,9 @@ function buildStageCounts(
   return counts;
 }
 
-export async function getDashboardViewModel(): Promise<DashboardViewModel> {
+export async function getDashboardViewModel(
+  view: DashboardView = "overview"
+): Promise<DashboardViewModel> {
   const now = new Date();
   const today = startOfUtcDay(now);
   const greeting = getGreeting(now.getHours());
@@ -314,6 +333,7 @@ export async function getDashboardViewModel(): Promise<DashboardViewModel> {
       return {
         activityItems: [],
         attentionItems: [],
+        calendarItems: [],
         error: null,
         greeting,
         projectCards: [],
@@ -323,6 +343,82 @@ export async function getDashboardViewModel(): Promise<DashboardViewModel> {
     }
 
     const favoriteRepositoryIds = favoriteRepositories.map((repository) => repository.id);
+
+    if (view === "calendar") {
+      const datedIssues = await prisma.gitHubIssue.findMany({
+        orderBy: [
+          { planningStartDate: "asc" },
+          { planningEndDate: "asc" },
+          { repositoryId: "asc" },
+          { number: "asc" }
+        ],
+        select: {
+          id: true,
+          number: true,
+          planningEndDate: true,
+          planningStartDate: true,
+          repository: { select: { fullName: true } },
+          state: true,
+          title: true,
+          url: true
+        },
+        where: {
+          planningEndDate: { not: null },
+          planningStartDate: { not: null },
+          repositoryId: { in: favoriteRepositoryIds }
+        }
+      });
+      const calendarItems = datedIssues.flatMap((issue): DashboardCalendarItem[] => {
+        if (
+          issue.planningStartDate === null ||
+          issue.planningEndDate === null ||
+          issue.planningEndDate < issue.planningStartDate
+        ) {
+          return [];
+        }
+
+        return [
+          {
+            endDate: formatDateOnly(issue.planningEndDate),
+            id: issue.id,
+            number: issue.number,
+            repositoryFullName: issue.repository.fullName,
+            startDate: formatDateOnly(issue.planningStartDate),
+            state: issue.state,
+            title: issue.title,
+            url: issue.url
+          }
+        ];
+      });
+      const oldestSyncedAt = favoriteRepositories.reduce<Date | null>((oldest, repository) => {
+        if (!oldest || repository.syncedAt < oldest) {
+          return repository.syncedAt;
+        }
+
+        return oldest;
+      }, null);
+
+      return {
+        activityItems: [],
+        attentionItems: [],
+        calendarItems,
+        error: null,
+        greeting,
+        projectCards: [],
+        stats: {
+          ...EMPTY_STATS,
+          favoriteProjectCount: favoriteRepositories.length,
+          openIssueCount: favoriteRepositories.reduce(
+            (sum, repository) => sum + repository.openIssueCount,
+            0
+          ),
+          organizationCount: new Set(favoriteRepositories.map((repository) => repository.owner)).size
+        },
+        syncStatusLabel: oldestSyncedAt
+          ? `Last synced ${formatRelativeTime(oldestSyncedAt, now)}`
+          : "No sync has run yet"
+      };
+    }
 
     const [openFavoriteIssues, allFavoriteIssues, recentlyClosedIssues, recentSyncRuns, orderedStatusOptionsByRepo] =
       await Promise.all([
@@ -486,6 +582,7 @@ export async function getDashboardViewModel(): Promise<DashboardViewModel> {
     return {
       activityItems,
       attentionItems,
+      calendarItems: [],
       error: null,
       greeting,
       projectCards,
@@ -496,6 +593,7 @@ export async function getDashboardViewModel(): Promise<DashboardViewModel> {
     return {
       activityItems: [],
       attentionItems: [],
+      calendarItems: [],
       error: error instanceof Error ? error.message : "Unable to load dashboard data.",
       greeting,
       projectCards: [],
