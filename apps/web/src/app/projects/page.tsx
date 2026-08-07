@@ -10,6 +10,7 @@ import {
   parseProjectStatusOptions,
   type PlanningStatusMode
 } from "../planning-project";
+import { CreateIssueSheet } from "../create-issue-sheet";
 import { FavoriteRepositoryList } from "./favorite-repository-list";
 import { ProjectsAutoRefresh } from "./projects-auto-refresh";
 
@@ -275,9 +276,8 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
   const projectBoardCards = selectedRepository ? getProjectBoardCards(selectedRepository) : [];
   const selectedProjects = selectedRepository?.projects.map((projectLink) => projectLink.project) ?? [];
   const selectedProjectUrl = selectedProjects[0]?.url ?? null;
-  const statusMode: PlanningStatusMode = selectedRepository
-    ? resolveStatusMode(pickPrimaryProject(selectedRepository))
-    : { mode: "local" };
+  const primaryProject = selectedRepository ? pickPrimaryProject(selectedRepository) : null;
+  const statusMode: PlanningStatusMode = resolveStatusMode(primaryProject);
 
   return (
     <main className="min-h-screen bg-background">
@@ -383,16 +383,21 @@ export default async function ProjectsPage({ searchParams }: ProjectsPageProps) 
                             {selectedRepository.name}
                           </h2>
                         </div>
-                        <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-muted-foreground">
-                          <span className="rounded-md border bg-background px-2 py-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="rounded-md border bg-background px-2 py-1 text-xs font-medium text-muted-foreground">
                             {projectBoardCards.length} project cards
                           </span>
-                          <span className="rounded-md border bg-background px-2 py-1">
+                          <span className="rounded-md border bg-background px-2 py-1 text-xs font-medium text-muted-foreground">
                             {selectedRepository.openIssueCount} open
                           </span>
-                          <span className="rounded-md border bg-background px-2 py-1">
+                          <span className="rounded-md border bg-background px-2 py-1 text-xs font-medium text-muted-foreground">
                             Repo synced {formatDate(selectedRepository.syncedAt)}
                           </span>
+                          <CreateIssueSheet
+                            owner={selectedRepository.owner}
+                            projectId={primaryProject?.id ?? null}
+                            repo={selectedRepository.name}
+                          />
                         </div>
                       </div>
 
