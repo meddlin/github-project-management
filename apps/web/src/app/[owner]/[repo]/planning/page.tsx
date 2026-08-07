@@ -1,12 +1,12 @@
 import { prisma, type Prisma } from "@gpm/db";
 import { CircleAlert } from "lucide-react";
 import Link from "next/link";
+import { CreateIssueSheet } from "../../../create-issue-sheet";
 import {
   parseProjectStatusOptions,
   pickPrimaryProjectItem,
   type PlanningStatusMode
 } from "../../../planning-project";
-import { CreateIssueDialog } from "./create-issue-dialog";
 import {
   PlanningIssueSplitView,
   type PlanningIssue
@@ -206,7 +206,8 @@ export default async function PlanningPage({ params, searchParams }: PlanningPag
   const decodedOwner = decodeURIComponent(owner);
   const decodedRepo = decodeURIComponent(repo);
   const { error, repository } = await getPlanningData(decodedOwner, decodedRepo);
-  const statusMode = repository ? resolveStatusMode(pickPrimaryProject(repository)) : null;
+  const primaryProject = repository ? pickPrimaryProject(repository) : null;
+  const statusMode = repository ? resolveStatusMode(primaryProject) : null;
 
   return (
     <main className="min-h-screen bg-background">
@@ -278,7 +279,11 @@ export default async function PlanningPage({ params, searchParams }: PlanningPag
                     label="Board"
                   />
                 </div>
-                <CreateIssueDialog owner={decodedOwner} repo={decodedRepo} />
+                <CreateIssueSheet
+                  owner={decodedOwner}
+                  projectId={primaryProject?.id ?? null}
+                  repo={decodedRepo}
+                />
               </div>
 
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border bg-card px-4 py-3 text-sm">

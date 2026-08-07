@@ -151,6 +151,16 @@ const clearProjectStatusMutation = `
   }
 `;
 
+const addProjectItemMutation = `
+  mutation AddProjectItem($contentId: ID!, $projectId: ID!) {
+    addProjectV2ItemById(input: { contentId: $contentId, projectId: $projectId }) {
+      item {
+        id
+      }
+    }
+  }
+`;
+
 function requireGitHubToken() {
   const token = process.env.GITHUB_PAT;
 
@@ -284,19 +294,122 @@ export async function getRepositoryLabels({ owner, repo }: { owner: string; repo
   return labels.sort((left, right) => left.localeCompare(right));
 }
 
+export async function getRepositoryAssignees({ owner, repo }: { owner: string; repo: string }) {
+  if (!owner || !repo) {
+    throw new Error("Repository owner and name are required.");
+  }
+
+  const token = requireGitHubToken();
+  const assignees: string[] = [];
+  let page = 1;
+
+  while (true) {
+    const response = await fetch(
+      `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(
+        repo
+      )}/assignees?per_page=100&page=${page}`,
+      {
+        headers: buildGitHubHeaders(token),
+        method: "GET"
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(
+        `Unable to load repository assignees from GitHub: ${await readGitHubError(response)}`
+      );
+    }
+
+    const pageAssignees = (await response.json()) as Array<{ login?: string | null }>;
+    assignees.push(...pageAssignees.map((assignee) => assignee.login ?? "").filter(Boolean));
+
+    if (pageAssignees.length < 100) {
+      break;
+    }
+
+    page += 1;
+  }
+
+  return assignees.sort((left, right) => left.localeCompare(right));
+}
+
+export type GitHubMilestone = {
+  number: number;
+  title: string;
+};
+
+export async function getRepositoryMilestones({
+  owner,
+  repo
+}: {
+  owner: string;
+  repo: string;
+}): Promise<GitHubMilestone[]> {
+  if (!owner || !repo) {
+    throw new Error("Repository owner and name are required.");
+  }
+
+  const token = requireGitHubToken();
+  const milestones: GitHubMilestone[] = [];
+  let page = 1;
+
+  while (true) {
+    const response = await fetch(
+      `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(
+        repo
+      )}/milestones?state=open&per_page=100&page=${page}`,
+      {
+        headers: buildGitHubHeaders(token),
+        method: "GET"
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(
+        `Unable to load repository milestones from GitHub: ${await readGitHubError(response)}`
+      );
+    }
+
+    const pageMilestones = (await response.json()) as Array<{
+      number: number;
+      title?: string | null;
+    }>;
+    milestones.push(
+      ...pageMilestones.map((milestone) => ({
+        number: milestone.number,
+        title: milestone.title ?? `Milestone #${milestone.number}`
+      }))
+    );
+
+    if (pageMilestones.length < 100) {
+      break;
+    }
+
+    page += 1;
+  }
+
+  return milestones.sort((left, right) => left.title.localeCompare(right.title));
+}
+
 export async function createPlanningIssue({
+  assignees,
   description,
   endDate,
   labels,
+  milestone,
   owner,
+  projectId,
   repo,
   startDate,
   title
 }: {
+  assignees?: string[];
   description: string;
   endDate?: string | null;
   labels: string[];
+  milestone?: number | null;
   owner: string;
+  projectId?: string | null;
   repo: string;
   startDate?: string | null;
   title: string;
@@ -314,6 +427,7 @@ export async function createPlanningIssue({
   const planningStartDate = normalizeDateInput(startDate);
   const planningEndDate = normalizeDateInput(endDate);
   const selectedLabels = normalizeLabels(labels);
+  const selectedAssignees = normalizeLabels(assignees ?? []);
   const token = requireGitHubToken();
   const repository = await prisma.gitHubRepository.findFirst({
     where: {
@@ -330,8 +444,10 @@ export async function createPlanningIssue({
     `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues`,
     {
       body: JSON.stringify({
+        assignees: selectedAssignees,
         body: description.trim() || undefined,
         labels: selectedLabels,
+        milestone: milestone ?? undefined,
         title: normalizedTitle
       }),
       headers: buildGitHubHeaders(token),
@@ -345,9 +461,10 @@ export async function createPlanningIssue({
 
   const issue = (await response.json()) as GitHubIssueResponse;
   const syncedAt = new Date();
+  let savedIssue: { id: string };
 
   try {
-    await prisma.$transaction([
+    const [upsertedIssue] = await prisma.$transaction([
       prisma.gitHubIssue.upsert({
         create: {
           assignees: issue.assignees?.map((assignee) => assignee.login ?? "").filter(Boolean) ?? [],
@@ -410,6 +527,7 @@ export async function createPlanningIssue({
         }
       })
     ]);
+    savedIssue = upsertedIssue;
   } catch (error) {
     throw new Error(
       `GitHub issue #${issue.number} was created, but local persistence failed. Run the next sync to recover it. ${
@@ -418,12 +536,64 @@ export async function createPlanningIssue({
     );
   }
 
+  let projectAttachWarning: string | null = null;
+
+  if (projectId) {
+    try {
+      const project = await prisma.gitHubProject.findUnique({
+        where: {
+          id: projectId
+        }
+      });
+
+      if (!project) {
+        throw new Error("Linked GitHub project was not found locally.");
+      }
+
+      const result = await requestGitHubGraphql<{
+        addProjectV2ItemById: { item: { id: string } };
+      }>({
+        query: addProjectItemMutation,
+        token,
+        variables: {
+          contentId: issue.node_id,
+          projectId: project.nodeId
+        }
+      });
+
+      const itemNodeId = result.addProjectV2ItemById.item.id;
+
+      await prisma.gitHubProjectItem.upsert({
+        create: {
+          contentType: "ISSUE",
+          importedAt: syncedAt,
+          issueId: savedIssue.id,
+          itemUpdatedAt: syncedAt,
+          nodeId: itemNodeId,
+          projectId: project.id
+        },
+        update: {
+          issueId: savedIssue.id,
+          itemUpdatedAt: syncedAt
+        },
+        where: {
+          nodeId: itemNodeId
+        }
+      });
+    } catch (error) {
+      projectAttachWarning = `Issue #${issue.number} was created, but attaching it to the GitHub Project failed: ${
+        error instanceof Error ? error.message : "Unknown error"
+      } Sync planning data and try again.`;
+    }
+  }
+
   revalidatePath(`/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/planning`);
   revalidatePath("/repos");
   revalidatePath("/projects");
 
   return {
     number: issue.number,
+    projectAttachWarning,
     url: issue.html_url
   };
 }
